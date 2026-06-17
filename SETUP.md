@@ -127,10 +127,7 @@ touch vulnbridge_project/settings_local.py
 # Workflow and AI orchestration
 pip install langgraph==0.0.20
 pip install langchain==0.0.350
-pip install langchain-openai==0.0.5
-
-# Terminal 3 integration
-pip install terminal3-agent-kit==1.0.0
+pip install langchain-groq==0.0.1
 
 # Real-time communication
 pip install channels==4.0.0
@@ -153,9 +150,12 @@ pip install pytest-django==4.5.2
 pip install sqlalchemy==2.0.19
 
 # Utilities
-pip install pydantic==2.0.0
+pip install pydantic==1.10.12
 pip install httpx==0.24.1
+pip install requests==2.31.0
 ```
+
+**Note on Terminal 3 Integration:** Terminal 3 is an external service, not a pip package. You'll integrate with it using HTTP API requests. The SDK will be added later when configuring the Terminal3Client class to make API calls to Terminal 3's endpoints.
 
 ### 4.4 Create requirements.txt
 
@@ -181,7 +181,7 @@ CREATE USER vulnbridge_user WITH PASSWORD 'vulnbridge_password';
 ALTER ROLE vulnbridge_user SET client_encoding TO 'utf8';
 ALTER ROLE vulnbridge_user SET default_transaction_isolation TO 'read committed';
 ALTER ROLE vulnbridge_user SET default_transaction_deferrable TO on;
-ALTER ROLE vulnbridge_user SET default_time_zone TO 'UTC';
+ALTER ROLE vulnbridge_user SET TimeZone TO 'UTC';
 
 GRANT ALL PRIVILEGES ON DATABASE vulnbridge TO vulnbridge_user;
 
@@ -193,10 +193,10 @@ GRANT ALL PRIVILEGES ON DATABASE vulnbridge TO vulnbridge_user;
 ```bash
 # From backend directory with venv activated
 python manage.py migrate
-python manage.py migrate --app cases
-python manage.py migrate --app authority
-python manage.py migrate --app audit
-python manage.py migrate --app notifications
+python manage.py migrate cases
+python manage.py migrate authority
+python manage.py migrate audit
+python manage.py migrate notifications
 ```
 
 ---
@@ -209,36 +209,60 @@ python manage.py migrate --app notifications
 cd frontend
 
 # Create React app with TypeScript
+# Note: This automatically installs TypeScript, @types/react, and @types/react-dom
 npx create-react-app . --template typescript
 
-# Install additional frontend dependencies
-npm install axios
-npm install react-router-dom
-npm install ws
-npm install zustand
-npm install tailwindcss
-npm install postcss
-npm install autoprefixer
-
-# Install UI components
-npm install @headlessui/react
-npm install @heroicons/react
-
-# Install development dependencies
-npm install -D typescript
-npm install -D @types/react
-npm install -D @types/react-dom
+# Install all frontend dependencies in one command
+npm install axios react-router-dom ws zustand tailwindcss postcss autoprefixer @headlessui/react @heroicons/react @tailwindcss/postcss
 ```
 
 ### 6.2 Configure Environment
 
-```bash
-# Create .env file
-echo "REACT_APP_API_URL=http://localhost:8000
-REACT_APP_WS_URL=ws://localhost:8000/ws" > .env
+**Create .env file:**
 
-# Create Tailwind config
-npx tailwindcss init -p
+```powershell
+@"
+REACT_APP_API_URL=http://localhost:8000
+REACT_APP_WS_URL=ws://localhost:8000/ws
+"@ | Set-Content .env
+```
+
+**Create Tailwind config files:**
+
+```powershell
+# Create tailwind.config.js
+@"
+/** @type {import('tailwindcss').Config} */
+module.exports = {
+  content: [
+    "./index.html",
+    "./src/**/*.{js,ts,jsx,tsx}",
+  ],
+  theme: {
+    extend: {},
+  },
+  plugins: [],
+}
+"@ | Set-Content tailwind.config.js
+
+# Create postcss.config.js (for Tailwind v4)
+@"
+module.exports = {
+  plugins: {
+    '@tailwindcss/postcss': {},
+  },
+}
+"@ | Set-Content postcss.config.js
+```
+
+**Add Tailwind directives to src/index.css:**
+
+Open `src/index.css` and add these lines at the very top:
+
+```css
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 ```
 
 ---
@@ -247,13 +271,15 @@ npx tailwindcss init -p
 
 ### 7.1 Create Terminal 3 Configuration
 
-```bash
+```powershell
 cd ../backend
 
-mkdir -p vulnbridge_project/terminal3
+# Create Terminal 3 config directory
+mkdir config\terminal3 -Force
 
 # Create Terminal 3 configuration file
-echo "[terminal3]
+@"
+[terminal3]
 agent_id=vulnbridge-agent
 agent_key=your-agent-key-here
 agent_secret=your-agent-secret-here
@@ -265,48 +291,94 @@ auth_method=agent-credentials
 verification_endpoint=/api/v1/authority/verify
 revocation_endpoint=/api/v1/authority/revoke
 delegation_endpoint=/api/v1/authority/delegate
-webhook_secret=your-webhook-secret" > config/terminal3/config.ini
+webhook_secret=your-webhook-secret
+"@ | Set-Content config\terminal3\config.ini
 
 # Create Terminal 3 integration module
-touch vulnbridge/integrations/terminal3_client.py
+New-Item -ItemType File -Path vulnbridge\integrations\terminal3_client.py -Force
 ```
 
 ### 7.2 Create Terminal 3 Client Code Template
 
-```bash
-cat > vulnbridge/integrations/terminal3_client.py << 'EOF'
+Create the file `vulnbridge\integrations\terminal3_client.py` with this content:
+
+```python
 """Terminal 3 Authority Verification Client"""
 
 import os
-from terminal3_sdk import AgentClient
+import requests
+from typing import Dict, Optional
 
 class Terminal3Client:
+    """HTTP client for Terminal 3 authority verification service"""
+    
     def __init__(self):
-        self.client = AgentClient(
-            agent_id=os.getenv('TERMINAL3_AGENT_ID'),
-            agent_key=os.getenv('TERMINAL3_AGENT_KEY'),
-            api_url=os.getenv('TERMINAL3_API_URL')
-        )
+        self.api_url = os.getenv('TERMINAL3_API_URL', 'https://terminal3.dev/api')
+        self.agent_id = os.getenv('TERMINAL3_AGENT_ID')
+        self.agent_key = os.getenv('TERMINAL3_AGENT_KEY')
     
-    def verify_authority(self, case_id, authority_type):
+    def verify_authority(self, case_id: str, authority_type: str) -> Dict:
         """Verify if authority is currently active"""
-        pass
+        try:
+            response = requests.post(
+                f"{self.api_url}/v1/authority/verify",
+                json={
+                    "case_id": case_id,
+                    "authority_type": authority_type,
+                    "agent_id": self.agent_id
+                },
+                headers={"Authorization": f"Bearer {self.agent_key}"}
+            )
+            return response.json()
+        except Exception as e:
+            return {"success": False, "error": str(e)}
     
-    def delegate_authority(self, case_id, authority_type, stakeholder):
+    def delegate_authority(self, case_id: str, authority_type: str, stakeholder: str) -> Dict:
         """Create new authority delegation"""
-        pass
+        try:
+            response = requests.post(
+                f"{self.api_url}/v1/authority/delegate",
+                json={
+                    "case_id": case_id,
+                    "authority_type": authority_type,
+                    "stakeholder": stakeholder,
+                    "agent_id": self.agent_id
+                },
+                headers={"Authorization": f"Bearer {self.agent_key}"}
+            )
+            return response.json()
+        except Exception as e:
+            return {"success": False, "error": str(e)}
     
-    def revoke_authority(self, case_id, authority_type):
+    def revoke_authority(self, case_id: str, authority_type: str) -> Dict:
         """Revoke existing authority delegation"""
-        pass
+        try:
+            response = requests.post(
+                f"{self.api_url}/v1/authority/revoke",
+                json={
+                    "case_id": case_id,
+                    "authority_type": authority_type,
+                    "agent_id": self.agent_id
+                },
+                headers={"Authorization": f"Bearer {self.agent_key}"}
+            )
+            return response.json()
+        except Exception as e:
+            return {"success": False, "error": str(e)}
     
-    def get_delegation_history(self, case_id):
+    def get_delegation_history(self, case_id: str) -> Dict:
         """Retrieve complete authority history"""
-        pass
+        try:
+            response = requests.get(
+                f"{self.api_url}/v1/authority/history/{case_id}",
+                headers={"Authorization": f"Bearer {self.agent_key}"}
+            )
+            return response.json()
+        except Exception as e:
+            return {"success": False, "error": str(e)}
 
 # Initialize Terminal 3 client
 terminal3_client = Terminal3Client()
-EOF
 ```
 
 ---
@@ -315,26 +387,28 @@ EOF
 
 ### 8.1 Create Workflow Directory Structure
 
-```bash
-mkdir -p vulnbridge/workflow/states
-mkdir -p vulnbridge/workflow/nodes
-mkdir -p vulnbridge/workflow/edges
+```powershell
+# Create workflow directories
+mkdir vulnbridge\workflow\states -Force
+mkdir vulnbridge\workflow\nodes -Force
+mkdir vulnbridge\workflow\edges -Force
 
 # Create workflow modules
-touch vulnbridge/workflow/__init__.py
-touch vulnbridge/workflow/states/__init__.py
-touch vulnbridge/workflow/states/vulnerability_state.py
-touch vulnbridge/workflow/nodes/__init__.py
-touch vulnbridge/workflow/nodes/submission_node.py
-touch vulnbridge/workflow/nodes/validation_node.py
-touch vulnbridge/workflow/edges/__init__.py
-touch vulnbridge/workflow/edges/transitions.py
+New-Item -ItemType File -Path vulnbridge\workflow\__init__.py -Force
+New-Item -ItemType File -Path vulnbridge\workflow\states\__init__.py -Force
+New-Item -ItemType File -Path vulnbridge\workflow\states\vulnerability_state.py -Force
+New-Item -ItemType File -Path vulnbridge\workflow\nodes\__init__.py -Force
+New-Item -ItemType File -Path vulnbridge\workflow\nodes\submission_node.py -Force
+New-Item -ItemType File -Path vulnbridge\workflow\nodes\validation_node.py -Force
+New-Item -ItemType File -Path vulnbridge\workflow\edges\__init__.py -Force
+New-Item -ItemType File -Path vulnbridge\workflow\edges\transitions.py -Force
 ```
 
 ### 8.2 Create Main Workflow File
 
-```bash
-cat > vulnbridge/workflow/vulnerability_workflow.py << 'EOF'
+Create `vulnbridge\workflow\vulnerability_workflow.py`:
+
+```python
 """LangGraph Vulnerability Disclosure Workflow"""
 
 from langgraph.graph import StateGraph
@@ -373,7 +447,6 @@ def create_workflow():
 
 # Create workflow instance
 vulnerability_workflow = create_workflow()
-EOF
 ```
 
 ---
@@ -382,8 +455,9 @@ EOF
 
 ### 9.1 Create Django Models
 
-```bash
-cat > vulnbridge/cases/models.py << 'EOF'
+Create `vulnbridge\cases\models.py` with this content:
+
+```python
 from django.db import models
 from django.contrib.postgres.fields import ArrayField
 
@@ -469,7 +543,6 @@ class Notification(models.Model):
     
     class Meta:
         db_table = 'notifications'
-EOF
 ```
 
 ---
@@ -478,8 +551,9 @@ EOF
 
 ### 10.1 Create Serializers
 
-```bash
-cat > vulnbridge/cases/serializers.py << 'EOF'
+Create `vulnbridge\cases\serializers.py`:
+
+```python
 from rest_framework import serializers
 from vulnbridge.cases.models import VulnerabilityCase, AuthorityDelegation, AuditLog
 
@@ -497,13 +571,13 @@ class AuditLogSerializer(serializers.ModelSerializer):
     class Meta:
         model = AuditLog
         fields = '__all__'
-EOF
 ```
 
 ### 10.2 Create Views
 
-```bash
-cat > vulnbridge/cases/views.py << 'EOF'
+Create `vulnbridge\cases\views.py`:
+
+```python
 from rest_framework import viewsets, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
@@ -555,13 +629,13 @@ class VulnerabilityCaseViewSet(viewsets.ModelViewSet):
         if result.get('success'):
             return Response(result)
         return Response(result, status=status.HTTP_400_BAD_REQUEST)
-EOF
 ```
 
 ### 10.3 Create URL Router
 
-```bash
-cat > vulnbridge/cases/urls.py << 'EOF'
+Create `vulnbridge\cases\urls.py`:
+
+```python
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from vulnbridge.cases.views import VulnerabilityCaseViewSet
@@ -572,7 +646,6 @@ router.register(r'vulnerabilities', VulnerabilityCaseViewSet)
 urlpatterns = [
     path('api/', include(router.urls)),
 ]
-EOF
 ```
 
 ---
@@ -693,12 +766,12 @@ EOF
 
 ### 12.1 Backend .env
 
-```bash
-cd backend
+Create `.env` in the backend directory with:
 
-cat > .env << 'EOF'
+```powershell
+@"
 DEBUG=True
-SECRET_KEY=your-secret-key-change-in-production-$(openssl rand -hex 32)
+SECRET_KEY=your-secret-key-change-in-production
 ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0
 
 # Database
@@ -711,6 +784,9 @@ DATABASE_PORT=5432
 
 # Redis
 REDIS_URL=redis://localhost:6379/0
+
+# Groq API (Free - get key from https://console.groq.com)
+GROQ_API_KEY=your-groq-api-key-here
 
 # Terminal 3
 TERMINAL3_AGENT_ID=vulnbridge-agent
@@ -731,20 +807,22 @@ EMAIL_PORT=1025
 
 # CORS
 CORS_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
-EOF
+"@ | Set-Content .env
 ```
 
 ### 12.2 Frontend .env
 
-```bash
+Create `.env` in the frontend directory:
+
+```powershell
 cd ../frontend
 
-cat > .env << 'EOF'
+@"
 REACT_APP_API_URL=http://localhost:8000
 REACT_APP_API_TIMEOUT=30000
 REACT_APP_WS_URL=ws://localhost:8000/ws
 REACT_APP_WS_RECONNECT_INTERVAL=5000
-EOF
+"@ | Set-Content .env
 ```
 
 ---
@@ -757,19 +835,17 @@ cd backend
 # Run migrations
 python manage.py migrate
 
-# Create superuser
+# Create superuser (interactive)
 python manage.py createsuperuser
 
 # Create groups for RBAC
-python manage.py shell << 'SHELL'
+python manage.py shell -c "
 from django.contrib.auth.models import Group
-
 groups = ['security', 'engineering', 'legal', 'communications']
 for group_name in groups:
     Group.objects.get_or_create(name=group_name)
-
-print("Groups created successfully")
-SHELL
+print('Groups created successfully')
+"
 ```
 
 ---
@@ -819,11 +895,12 @@ curl http://localhost:8000/api/vulnerabilities/
 
 ## Step 15: Git Repository Setup
 
-```bash
-cd .. (go to project root)
+```powershell
+# Go to project root
+cd ..
 
 # Create .gitignore
-cat > .gitignore << 'EOF'
+@"
 # Python
 venv/
 *.py[cod]
@@ -861,15 +938,15 @@ Thumbs.db
 
 # Docker
 .dockerignore
-EOF
+"@ | Set-Content .gitignore
 
 # Create .gitattributes
-cat > .gitattributes << 'EOF'
+@"
 *.py text eol=lf
 *.js text eol=lf
 *.json text eol=lf
 *.md text eol=lf
-EOF
+"@ | Set-Content .gitattributes
 
 # Initial commit
 git add .
