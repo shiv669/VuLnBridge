@@ -1,414 +1,782 @@
-# VulnBridge Architecture Requirements Document
+# VulnBridge: Architecture Requirements Document
 
-## System Overview
+**Agent-in-TEE Architecture** - VulnBridge deployed as cryptographically-verified agent inside Terminal 3 Trusted Execution Environment
 
-VulnBridge consists of five core components:
+---
 
-```
-React Frontend
-     ↓
-Django API Layer
-     ↓
-LangGraph Workflow Engine
-     ↓
-Terminal 3 Authority Layer
-     ↓
-PostgreSQL Database
-```
-
-Each component is responsible for a specific concern:
-
-- **Frontend**: User interface for vulnerability submission, case management, authority delegation
-- **API**: REST endpoints for case operations, authority delegation requests, audit trail queries
-- **Workflow Engine**: Orchestrates multi-stage vulnerability workflow, queries Terminal 3 before actions
-- **Authority Layer**: Terminal 3 integration for authority verification and revocation
-- **Database**: Persistent storage for cases, delegations, audit logs
-
-## Component Architecture
-
-### Frontend (React)
-
-The frontend is a single-page application providing:
-
-- Vulnerability submission form (no authentication required)
-- Case details dashboard (role-based access)
-- Authority delegation panel (requires stakeholder authentication)
-- Real-time workflow timeline (WebSocket updates)
-
-The frontend uses WebSocket connection to receive real-time status updates from the backend. When backend publishes status change, all connected browsers viewing that case receive message and update UI immediately.
-
-### Backend API (Django)
-
-The backend exposes REST API endpoints:
-
-- `POST /api/vulnerabilities/submit` - Accept vulnerability submission
-- `GET /api/vulnerabilities/{caseId}` - Retrieve case details
-- `POST /api/authority/delegate` - Request authority delegation
-- `POST /api/authority/revoke` - Request authority revocation
-- `GET /api/audit/trail/{caseId}` - Retrieve audit log
-
-All endpoints except vulnerability submission require authentication. Organizational users authenticate via OAuth2. The API validates that requester has appropriate role to access the resource.
-
-### Workflow Engine (LangGraph)
-
-LangGraph is a state machine framework that represents the vulnerability disclosure workflow as a directed graph with nodes for each workflow stage:
-
-- Node: Submission (receives vulnerability)
-- Node: Security Validation (security team reviews)
-- Node: Engineering Remediation (engineering team patches)
-- Node: Legal Review (legal team approves)
-- Node: Communications (communications team publishes)
-- Node: Closed (case resolved)
-
-Transitions between nodes represent completion conditions. For example, transition from Security Validation to Engineering Remediation occurs when security team marks validation complete AND security has delegated investigation authority.
-
-LangGraph persists workflow state to PostgreSQL. If the workflow engine crashes, it can recover from the last persisted checkpoint and resume execution without losing progress.
-
-Before transitioning to the next stage, LangGraph:
-
-1. Identifies what authority is required for the next stage
-2. Queries Authority Validation Service with authority type
-3. Waits for response from Terminal 3
-4. Only transitions if Terminal 3 confirms authority is active
-5. Logs the authority check and decision to audit trail
-
-### Authority Verification
-
-All authority verification flows through Terminal 3:
+## 1. System Architecture Overview
 
 ```
-Workflow Action Needed
-     ↓
-Query Authority Service
-     ↓
-Authority Service → Terminal 3 API
-     ↓
-Terminal 3 checks delegation state
-     ↓
-Terminal 3 → Authority Service (ACTIVE or REVOKED)
-     ↓
-Authority Service → Workflow Engine
-     ↓
-Proceed (if ACTIVE) or Pause (if REVOKED)
+┌─────────────────────────────────────────────────────────────────────┐
+│  Terminal 3 Network (Confidential Computing TEE Layer)              │
+│                                                                     │
+│  ┌──────────────────────────────────────────────────────────────┐  │
+│  │  VulnBridge Agent Tenant (Hardware-Enforced)               │  │
+│  │                                                            │  │
+│  │  DID: did:t3n:091e8b21792cb47aa07ee28b08066b7bedc6a597   │  │
+│  │                                                            │  │
+│  │  WASM Contracts (Rust → compiled to WASM):               │  │
+│  │    ├─ validate_vulnerability()                           │  │
+│  │    ├─ coordinate_patch()                                 │  │
+│  │    ├─ prepare_disclosure()                               │  │
+│  │    └─ publish_advisory()                                 │  │
+│  │                                                            │  │
+│  │  T3N Storage (Operator-Blind, Immutable):               │  │
+│  │    ├─ z:vulnbridge:authority          (grant/revoke)    │  │
+│  │    ├─ z:vulnbridge:action_log         (audit trail)     │  │
+│  │    └─ z:vulnbridge:case_state         (workflow state)  │  │
+│  │                                                            │  │
+│  │  Runtime Guarantees:                                     │  │
+│  │    ├─ Hardware-enforced authority verification          │  │
+│  │    ├─ Instant revocation (< 100ms)                      │  │
+│  │    ├─ Cryptographic signing of all outputs              │  │
+│  │    └─ Operator-blind execution (no visibility)          │  │
+│  └──────────────────────────────────────────────────────────────┘  │
+│                           ↓ (Rust/WASM bytecode)                   │
+│                           ↓ (Hardware-enforced)                     │
+└─────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────┐
+│  Django Backend (Orchestration & External API Calls)                │
+│                                                                      │
+│  Port: 8000                                                          │
+│  Database: PostgreSQL 14+                                            │
+│  Framework: Django 4.2 + DRF 3.14.0                                  │
+│                                                                      │
+│  Components:                                                         │
+│    ├─ /api/authority/grant         (POST: Grant agent authority)    │
+│    ├─ /api/authority/revoke        (POST: Revoke agent authority)   │
+│    ├─ /api/cases/create            (POST: Submit vulnerability)     │
+│    ├─ /api/cases/{id}/validate     (POST: Invoke validation)        │
+│    ├─ /api/cases/{id}/remediate    (POST: Invoke remediation)       │
+│    ├─ /api/cases/{id}/disclose     (POST: Invoke disclosure)        │
+│    ├─ /api/cases/{id}/publish      (POST: Invoke publication)       │
+│    ├─ /api/audit-log               (GET: Query action log)          │
+│    └─ /webhooks/t3n-revocation     (POST: Receive revocation events)│
+│                                                                      │
+│  Key Modules:                                                        │
+│    ├─ vulnbridge_project/settings.py      (Configuration)           │
+│    ├─ cases/models.py                     (Database schema)         │
+│    ├─ cases/views.py                      (API endpoints)           │
+│    ├─ cases/serializers.py                (Request/response)        │
+│    ├─ authority/views.py                  (Authority management)    │
+│    └─ integrations/terminal3_client.py    (T3N SDK wrapper)         │
+│                                                                      │
+│  Data Storage:                                                       │
+│    ├─ VulnerabilityCase       (case metadata)                      │
+│    ├─ AuthorityGrant          (authority delegation log)            │
+│    ├─ AuthorityRevocation     (revocation log)                      │
+│    └─ ActionLog               (local copy of audit trail)           │
+│                                                                      │
+│  External Integrations:                                              │
+│    ├─ Jira (ticket creation, agent DID signature)                   │
+│    ├─ Slack (notifications, agent identity)                         │
+│    ├─ SendGrid (emails, agent signature in content)                │
+│    └─ GitHub (repository operations, agent DID signature)          │
+└──────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────┐
+│  React Frontend (Authority Control & Audit Viewer)                  │
+│                                                                      │
+│  Port: 3000                                                          │
+│  Framework: React 19.2.7 + TypeScript 6.0.3                          │
+│                                                                      │
+│  Components:                                                         │
+│    ├─ VulnerabilityForm.tsx       (Submit vulnerability)             │
+│    ├─ AuthorityPanel.tsx          (Grant/revoke authorization)       │
+│    ├─ ActionLog.tsx               (View signed actions)              │
+│    ├─ CaseStatus.tsx              (Workflow status)                  │
+│    └─ SignatureVerifier.tsx       (Verify agent signature)           │
+│                                                                      │
+│  Real-time Updates:                                                  │
+│    └─ WebSocket connection        (Action notifications)            │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
-The Authority Service caches recent verification results for performance but always queries Terminal 3 for critical decisions.
+---
 
-### Authority Delegation Flow
+## 2. Terminal 3 Integration
 
-When stakeholder requests authority delegation:
+### 2.1 Agent Registration
 
-```
-Stakeholder Clicks "Delegate Authority" Button
-     ↓
-Frontend Requests Authentication Confirmation
-     ↓
-Frontend Sends Delegation Request to Django API
-     ↓
-API Authenticates Stakeholder
-     ↓
-API Forwards Delegation Request to Terminal 3
-     ↓
-Terminal 3 Verifies Stakeholder Identity
-     ↓
-Terminal 3 Creates Cryptographic Signature
-     ↓
-Terminal 3 Returns Signed Token
-     ↓
-API Stores Token in Database
-     ↓
-API Updates Authority Cache
-     ↓
-LangGraph Detects Authority is Active
-     ↓
-Workflow Progresses to Next Stage
-```
+**Process:**
+1. Create DID: Agent registers with Terminal 3 to get unique identifier
+   - DID Format: `did:t3n:091e8b21792cb47aa07ee28b08066b7bedc6a597`
+   - Immutable: Once registered, DID cannot change
+   - Verifiable: External systems can verify DID authenticity
 
-### Authority Revocation Flow
+2. Upload WASM: Agent bytecode compiled to WASM format
+   - Compile: `cargo build --release --target wasm32-wasip2`
+   - Output: `vulnbridge_agent.wasm` (WebAssembly bytecode)
+   - Deploy: Upload to T3N testnet via @terminal3/t3n-sdk
 
-When stakeholder revokes authority:
+3. Initialize Storage: Create storage namespace in T3N
+   - Namespace: `z:vulnbridge:*` (operator-blind storage)
+   - Subkeys:
+     - `z:vulnbridge:authority` - Authority grants/revocations
+     - `z:vulnbridge:action_log` - Immutable audit trail
+     - `z:vulnbridge:case_state` - Workflow state cache
 
-```
-Stakeholder Clicks "Revoke Authority" Button
-     ↓
-Frontend Sends Revocation Request to API
-     ↓
-API Forwards Revocation to Terminal 3
-     ↓
-Terminal 3 Marks Delegation as Revoked
-     ↓
-Terminal 3 Sends Webhook to VulnBridge
-     ↓
-API Receives Webhook
-     ↓
-API Updates Authority Cache
-     ↓
-API Notifies LangGraph of Revocation
-     ↓
-LangGraph Stops Attempting Revoked Actions
-     ↓
-Workflow Pauses at Current Stage
-     ↓
-WebSocket Notifies Connected Browsers
+### 2.2 Authority Storage Model
+
+**Storage Key**: `z:vulnbridge:authority`
+
+**Value Structure** (JSON):
+```json
+{
+  "agent_can_validate": true,
+  "agent_can_remediate": false,
+  "agent_can_disclose": false,
+  "agent_can_publish": false,
+  "grants": {
+    "agent_can_validate": {
+      "granted_by": "security@org",
+      "granted_at": "2026-06-17T14:00:00Z",
+      "revoked_at": null
+    }
+  }
+}
 ```
 
-### Database Schema (PostgreSQL)
+**Operations:**
+- **Grant**: `updateStorage(key="z:vulnbridge:authority", value.agent_can_validate=true)`
+- **Revoke**: `updateStorage(key="z:vulnbridge:authority", value.agent_can_validate=false)`
+- **Read**: Agent checks authority before action
 
-**vulnerability_cases** table
-- case_id (UUID primary key)
-- created_timestamp
-- submitted_by (researcher email)
-- title, description
-- severity_score (CVSS)
-- affected_systems (text array)
-- current_workflow_stage
-- status
-- updated_timestamp
+**Guarantees:**
+- Immutable: Once written, cannot be altered without signature
+- Operator-blind: T3N operators cannot read or modify
+- Hardware-enforced: Authority changes take effect immediately at hardware level
 
-**authority_delegations** table
-- delegation_id (UUID primary key)
-- case_id (foreign key)
-- delegated_by (stakeholder identity)
-- authority_type (investigation, remediation, disclosure, publication)
-- delegated_timestamp
-- revoked_timestamp (null if still active)
-- terminal3_token (signed delegation from Terminal 3)
+### 2.3 Action Log Storage
 
-**audit_log** table
-- log_id (bigint primary key)
-- timestamp
-- case_id (foreign key)
-- actor_identity
-- action_type
-- authority_used
-- result
-- details (JSON)
+**Storage Key**: `z:vulnbridge:action_log`
 
-Audit log table has only INSERT permission. UPDATE and DELETE are not allowed. This ensures immutability.
+**Value Structure** (Array of actions):
+```json
+[
+  {
+    "timestamp": "2026-06-17T14:30:00Z",
+    "agent_did": "did:t3n:091e8b21792cb47aa...",
+    "action": "validate_vulnerability",
+    "case_id": "VULN-2026-0815",
+    "authority_verified_from": "z:vulnbridge:authority:validate",
+    "signature": "0x...",
+    "result": "success",
+    "details": "Jira ticket SEC-123 created"
+  },
+  ...
+]
+```
 
-**notifications** table
-- notification_id (UUID primary key)
-- case_id (foreign key)
-- recipient_address
-- notification_type
-- status (pending, sent, failed)
-- created_timestamp
-- sent_timestamp
-- error_message
+**Guarantees:**
+- Immutable: Actions cannot be modified after logging
+- Operator-blind: Even T3N operators cannot alter log
+- Completeness: Every agent action is logged
+- Verifiable: Cryptographic signatures on every entry
 
-## Data Flow: Complete Scenario
+### 2.4 WASM Contracts
 
-**Initial Submission**
+#### Contract 1: validate_vulnerability
 
-1. Researcher fills vulnerability form and clicks submit
-2. Browser sends POST request to `/api/vulnerabilities/submit`
-3. API validates form data
-4. API creates record in vulnerability_cases table
-5. API creates audit log entry
-6. API sends message to notification queue
-7. Background worker consumes message
-8. Worker sends email to security team
-9. API returns case_id to browser
+**Purpose**: Analyze vulnerability and create ticket
 
-**Authority Delegation**
+**Entry Point**:
+```rust
+pub fn validate_vulnerability(case_id: &str, severity: f32) -> ContractResult
+```
 
-1. Security team opens case details page
-2. Page displays "Delegate Investigation Authority" button
-3. Security team clicks button
-4. Frontend requests password confirmation
-5. Frontend sends POST request to `/api/authority/delegate` with authority_type=investigation
-6. API authenticates stakeholder
-7. API forwards request to Terminal 3
-8. Terminal 3 signs delegation and returns token
-9. API creates record in authority_delegations table with terminal3_token
-10. API creates audit log entry
-11. API updates authority cache in memory
-12. LangGraph detects authority is now active
-13. LangGraph begins investigation workflow
-14. LangGraph publishes StatusChanged event via WebSocket
+**Runtime Steps:**
+1. Check authority: `read z:vulnbridge:authority → agent_can_validate == true`
+2. If not authorized: Return error (hardware enforces this)
+3. If authorized:
+   - Analyze vulnerability details
+   - Determine Jira project and labels
+   - Generate ticket payload
+   - Sign output with agent DID
+   - Write to z:vulnbridge:action_log
+4. Return signed result to backend
 
-**Workflow Progression**
+**Output Signature**:
+```json
+{
+  "status": "success",
+  "jira_ticket": "SEC-123",
+  "agent_did": "did:t3n:...",
+  "timestamp": "2026-06-17T14:30:00Z",
+  "signature": "0x...",
+  "proof": "z:vulnbridge:action_log"
+}
+```
 
-1. LangGraph reaches decision point requiring next stage transition
-2. LangGraph identifies required authority (e.g., remediation authority)
-3. LangGraph queries Authority Validation Service
-4. Authority Service queries Terminal 3 API
-5. Terminal 3 checks authority_delegations table for active delegation
-6. Terminal 3 returns ACTIVE
-7. Authority Service returns ACTIVE to LangGraph
-8. LangGraph proceeds with next stage
-9. LangGraph creates audit log entry recording authority verification and decision
+#### Contract 2: coordinate_patch
 
-**Authority Revocation**
+**Purpose**: Notify engineering team
 
-1. Legal counsel clicks "Revoke Communications Authority" button
-2. Frontend sends POST request to `/api/authority/revoke` with authority_type=communications
-3. API sends revocation request to Terminal 3
-4. Terminal 3 updates authority_delegations record, sets revoked_timestamp
-5. Terminal 3 sends webhook to VulnBridge: `POST /webhooks/authority-revoked`
-6. API receives webhook
-7. API updates authority cache, marking communications authority as revoked
-8. API publishes WorkflowPaused event
-9. WebSocket delivers WorkflowPaused message to all connected browsers
-10. LangGraph's next authority check queries Terminal 3
-11. Terminal 3 returns REVOKED for communications authority
-12. LangGraph stops executing
-13. Workflow remains paused
+**Entry Point**:
+```rust
+pub fn coordinate_patch(case_id: &str) -> ContractResult
+```
 
-**Authority Restoration**
+**Runtime Steps:**
+1. Check authority: `agent_can_remediate == true`
+2. If authorized:
+   - Generate Slack message with agent identity
+   - Include signature in message
+   - Return message payload
+3. Backend sends message to Slack
 
-1. Legal counsel clicks "Restore Communications Authority" button
-2. Frontend sends POST request to `/api/authority/delegate`
-3. API forwards to Terminal 3
-4. Terminal 3 creates new delegation record
-5. Terminal 3 returns new signed token
-6. API creates new record in authority_delegations
-7. API updates authority cache
-8. API publishes WorkflowResumed event
-9. LangGraph detects authority is active again
-10. LangGraph resumes execution from paused state
+#### Contract 3: prepare_disclosure
 
-## Integration Points
+**Purpose**: Generate CVE disclosure document
 
-### Jira Integration
+**Entry Point**:
+```rust
+pub fn prepare_disclosure(case_id: &str) -> ContractResult
+```
 
-When engineering remediation authority becomes active:
+**Runtime Steps:**
+1. Check authority: `agent_can_disclose == true`
+2. If authorized:
+   - Fetch vulnerability details
+   - Generate CVE metadata (ID, CVSS, description)
+   - Create disclosure document
+   - Sign document with agent DID
+   - Return signed disclosure
 
-1. LangGraph calls Jira REST API with vulnerability details
-2. Jira creates ticket and returns ticket identifier
-3. LangGraph stores ticket_id in vulnerability_cases record
-4. Periodically, integration service polls Jira API for ticket status
-5. When ticket status changes to "resolved", integration service creates PatchReady event
-6. LangGraph consumes event and progresses workflow
+#### Contract 4: publish_advisory
 
-### Slack Integration
+**Purpose**: Send notifications and update channels
 
-When workflow status changes:
+**Entry Point**:
+```rust
+pub fn publish_advisory(case_id: &str) -> ContractResult
+```
 
-1. LangGraph publishes StatusChanged event
-2. Notification service consumes event
-3. Notification service formats Slack message
-4. Notification service sends webhook to Slack incoming webhook URL
-5. Slack posts message to configured channel
-6. Message includes case link and current status
+**Runtime Steps:**
+1. Check authority: `agent_can_publish == true`
+2. If authorized:
+   - Generate email notification (researcher)
+   - Generate Slack message (security channel)
+   - Sign all outputs with agent DID
+   - Mark case as `closed`
+   - Return signed results
 
-### Email Integration
+### 2.5 Contract Execution Flow
 
-When notifications are required:
+```
+Backend: POST /api/cases/1/validate → Django view
 
-1. Notification service creates email message
-2. Notification service connects to external email service (SendGrid, AWS SES, etc.)
-3. Email service handles delivery and retry
-4. Notification service records notification status in database
+Django view:
+  1. Verify case exists
+  2. Prepare input: case_id, severity, analysis
+  3. Call T3N SDK:
+     await executeContract(
+       contractName: "validate_vulnerability",
+       input: { case_id: "VULN-2026-0815", severity: 8.5 },
+       agentDid: "did:t3n:091e8b21792cb47aa..."
+     )
 
-### Webhook Support
+T3N Hardware:
+  1. Load WASM bytecode for agent
+  2. Execute in hardware-enforced TEE
+  3. Contract checks: read z:vulnbridge:authority
+  4. If agent_can_validate == true:
+     - Execute contract logic
+     - Sign output with agent private key
+     - Write to z:vulnbridge:action_log
+  5. If agent_can_validate == false:
+     - Throw exception (hardware-enforced)
+     - Return error (authority not found)
+  6. Return signed result to backend
 
-External systems can subscribe to case updates:
+Django view receives result:
+  1. Verify signature using agent's public key
+  2. Store result in database
+  3. Return to frontend with signature
 
-1. Subscribers register webhook endpoint through API
-2. When case status changes, system sends HTTP POST to all registered endpoints
-3. Payload includes case_id, new_status, timestamp
-4. System includes HMAC signature for authenticity verification
-5. External systems verify signature and process update
+Frontend displays:
+  - Action status: "Validation complete"
+  - Agent DID: "did:t3n:..."
+  - Signature: "0x..."
+  - Verify button: Can independently verify signature
+```
 
-## Security Architecture
+---
 
-### Authentication
+## 3. Backend Architecture
 
-- Organizational users: OAuth2 with identity provider (Azure AD, Okta, etc)
-- Researchers: No authentication required for submission
-- Administrators: OAuth2 + MFA
+### 3.1 Django Models
 
-### Authorization
+```
+VulnerabilityCase
+├─ case_id (PK)
+├─ created_at
+├─ updated_at
+├─ title
+├─ description
+├─ severity_score
+├─ affected_systems (ArrayField)
+├─ researcher_email
+├─ status (submitted|validated|remediated|disclosed|closed)
+└─ current_workflow_stage
 
-- Users can only view cases in workflow stages where their role applies
-- All authority decisions are verified through Terminal 3
-- No implicit permissions
+AuthorityGrant
+├─ grant_id (PK)
+├─ agent_did
+├─ action_type (validate|remediate|disclose|publish)
+├─ granted_by
+├─ granted_at
+└─ revoked_at (nullable)
 
-### Data Protection
+ActionLog
+├─ log_id (PK)
+├─ case (FK to VulnerabilityCase)
+├─ action_type
+├─ agent_did
+├─ signature
+├─ timestamp
+├─ authority_verified
+└─ details (JSONField)
 
-- All network traffic: TLS 1.3
-- Vulnerability descriptions at rest: AES-256 encryption
-- Researcher contact info at rest: AES-256 encryption
-- Audit logs: Stored in plaintext (required for audit access)
-- Encryption keys: Stored separately from encrypted data
+Notification
+├─ notification_id (PK)
+├─ case (FK to VulnerabilityCase)
+├─ recipient_address
+├─ notification_type
+├─ status (pending|sent|failed)
+├─ created_at
+└─ sent_at
+```
 
-### Terminal 3 Integration
+### 3.2 API Endpoints
 
-- Communication with Terminal 3: Agent Dev Kit protocol
-- Authority verification: Always delegated to Terminal 3
-- Authority caching: Minimal, used only for performance
-- Revocation: Terminal 3 is authoritative source
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| POST | `/api/cases/create` | Submit vulnerability |
+| GET | `/api/cases/{id}` | Get case details |
+| POST | `/api/authority/grant` | Grant agent authority |
+| POST | `/api/authority/revoke` | Revoke agent authority |
+| GET | `/api/authority/status` | Check current authorities |
+| POST | `/api/cases/{id}/validate` | Invoke validation contract |
+| POST | `/api/cases/{id}/remediate` | Invoke remediation contract |
+| POST | `/api/cases/{id}/disclose` | Invoke disclosure contract |
+| POST | `/api/cases/{id}/publish` | Invoke publication contract |
+| GET | `/api/audit-log` | Query action audit trail |
+| POST | `/webhooks/t3n-revocation` | Receive revocation notifications |
 
-## Deployment
+### 3.3 Terminal 3 Client Wrapper
 
-**Development Environment**
-- Single Linux server
-- All components in Docker containers
-- PostgreSQL running locally
-- Simple file-based logging
+**File**: `vulnbridge/integrations/terminal3_client.py`
 
-**Production Deployment (Future)**
-- Docker containers
-- Kubernetes orchestration
-- PostgreSQL managed database
-- Redis cache layer
-- Load balancer for horizontal scaling
-- Centralized logging (ELK stack)
-- Prometheus metrics collection
+**Responsibilities:**
+- Authenticate with T3N API using agent DID + API key
+- Call T3N SDK to execute WASM contracts
+- Read/write T3N storage (authority, action log)
+- Verify contract output signatures
+- Handle revocation webhook notifications
 
-**For Hackathon Deployment**
-- Single Linux server
-- Docker containers for Django and PostgreSQL
-- React built and served by Django
-- Basic logging to stdout
+**Key Methods:**
+```python
+class Terminal3Client:
+    def executeContract(self, contract_name, input_data):
+        """Execute WASM contract inside T3N TEE"""
+        # Returns signed result
+    
+    def grantAuthority(self, action_type):
+        """Grant agent authority for action"""
+        # Updates z:vulnbridge:authority in T3N
+    
+    def revokeAuthority(self, action_type):
+        """Revoke agent authority for action"""
+        # Clears authority in T3N (hardware-enforced)
+    
+    def getAuthority(self, action_type):
+        """Check if agent has authority"""
+        # Reads from z:vulnbridge:authority
+    
+    def getActionLog(self, case_id=None):
+        """Retrieve immutable action log"""
+        # Reads from z:vulnbridge:action_log
+    
+    def verifySignature(self, data, signature, agent_did):
+        """Verify DID signature on contract output"""
+        # Returns True if valid
+```
 
-## Performance Characteristics
+---
 
-- Vulnerability submission: 100ms
-- Authority delegation: 2-5 seconds (includes Terminal 3 latency)
-- Authority verification: 200-500ms (Terminal 3 query)
-- WebSocket update delivery: 1-2 seconds
-- Case retrieval: 50ms
-- Workflow stage transition: 1-5 seconds (includes authority check and integrations)
+## 4. Frontend Architecture
 
-## Scalability Limits
+### 4.1 React Components
 
-Single server deployment supports:
+```
+App
+├─ AuthorityPanel
+│  ├─ Authority status (granted, revoked, pending)
+│  ├─ Grant buttons (validate, remediate, disclose, publish)
+│  └─ Big red REVOKE button
+├─ VulnerabilityForm
+│  ├─ Title, description, severity input
+│  └─ Submit button
+├─ CaseStatus
+│  ├─ Case details
+│  ├─ Workflow stage indicator
+│  └─ Timeline
+├─ ActionLog
+│  ├─ Table of agent actions
+│  ├─ Timestamp, action, signature columns
+│  └─ Signature verification button
+└─ SignatureVerifier
+   ├─ Paste signature + agent DID
+   └─ Verify cryptographic signature
+```
 
-- Approximately 10 concurrent users
-- Approximately 100 active cases
-- Approximately 1 workflow transition per second
-- WebSocket connections: 50 simultaneous
+### 4.2 WebSocket Messages
 
-Scaling beyond these limits requires:
-- Multiple Django application servers
-- Load balancer
-- PostgreSQL read replicas
-- Redis cache
-- Message queue (RabbitMQ or Kafka)
+**Connection**: `ws://localhost:8000/ws`
 
-## Critical Design Decisions
+**Message Types**:
+```typescript
+type WSMessage = 
+  | AuthorityGrantedMessage
+  | AuthorityRevokedMessage
+  | ActionExecutedMessage
+  | CaseStatusUpdatedMessage
+  | ErrorMessage
 
-**1. Authority Verification Through Terminal 3**
+interface AuthorityGrantedMessage {
+  type: "authority_granted"
+  action: string
+  grantedBy: string
+  timestamp: string
+}
 
-Authority is not stored or enforced by VulnBridge. All verification queries Terminal 3. This ensures that:
-- Authority state is always current
-- Application cannot escalate permissions
-- Revocations take effect immediately
+interface AuthorityRevokedMessage {
+  type: "authority_revoked"
+  action: string
+  revokedAt: string
+}
 
-**2. Immutable Audit Logs**
+interface ActionExecutedMessage {
+  type: "action_executed"
+  action: string
+  caseId: string
+  signature: string
+  timestamp: string
+}
 
-Audit logs are write-only. This creates permanent forensic record that cannot be tampered with.
+interface CaseStatusUpdatedMessage {
+  type: "case_status_updated"
+  caseId: string
+  status: string
+  stage: string
+}
+```
 
-**3. WebSocket for Real-Time Updates**
+---
 
-WebSocket provides low-latency updates to connected browsers. Users see workflow status changes immediately without polling.
+## 5. Security Guarantees
 
-**4. LangGraph for Workflow Persistence**
+### 5.1 Authority Enforcement
 
-LangGraph persists workflow state to database. If process crashes, workflow resumes from checkpoint without data loss.
+| Threat | Mitigation | Level |
+|--------|-----------|-------|
+| Agent acts without authorization | Hardware-enforced authority check (T3N TEE) | Hardware |
+| Forged authority | Authority stored in T3N, cannot be altered | Hardware |
+| Revocation not taking effect | Hardware immediately blocks authority | Hardware |
+| Race condition during revocation | Hardware enforces atomic operations | Hardware |
 
-**5. Terminal 3 as External Authority**
+### 5.2 Cryptographic Identity
 
-Terminal 3 is the single source of truth for authority. VulnBridge is a thin client to Terminal 3's authority system.
+| Threat | Mitigation | Level |
+|--------|-----------|-------|
+| Spoofed agent identity | DID verified by cryptographic signature | Crypto |
+| Signature forgery | HMAC verification with agent's public key | Crypto |
+| Agent identity theft | DID in T3N (immutable, unique) | Hardware |
+| Lost private key | Stored securely in T3N hardware | Hardware |
+
+### 5.3 Audit Trail Integrity
+
+| Threat | Mitigation | Level |
+|--------|-----------|-------|
+| Altered audit logs | T3N storage is immutable | Hardware |
+| Deleted action log entries | T3N storage is operator-blind | Hardware |
+| Backdated entries | Timestamp verified by T3N hardware | Hardware |
+| Off-chain log tampering | Backend logs are read-only reference | Software |
+
+### 5.4 External API Security
+
+| Threat | Mitigation | Level |
+|--------|-----------|-------|
+| Unauthorized Jira access | Agent DID signature in every API call | Crypto |
+| Forged Slack messages | Message signed with agent DID | Crypto |
+| Spoofed email notifications | Email includes signature for verification | Crypto |
+| Man-in-the-middle | HTTPS + TLS for all external calls | Network |
+
+---
+
+## 6. Data Flow Examples
+
+### 6.1 Authority Grant Flow
+
+```
+1. Frontend: User clicks "Authorize Validation" button
+   POST /api/authority/grant { action: "validate" }
+
+2. Backend (Django):
+   - Verify user is authorized to grant
+   - Call Terminal3Client.grantAuthority("validate")
+   - T3N SDK: updateStorage(z:vulnbridge:authority, agent_can_validate=true)
+
+3. Terminal 3:
+   - Hardware verifies authority update is cryptographically signed
+   - Updates z:vulnbridge:authority in immutable storage
+   - Signature timestamp recorded
+
+4. Backend receives:
+   { success: true, authority_id: "...", stored_at: "..." }
+
+5. Backend stores in database:
+   AuthorityGrant { action: validate, granted_at: now, revoked_at: null }
+
+6. Backend sends WebSocket to frontend:
+   { type: "authority_granted", action: "validate" }
+
+7. Frontend updates UI:
+   - Green checkmark next to "Validate"
+   - "REVOKE" button becomes bright red
+```
+
+### 6.2 Contract Execution Flow
+
+```
+1. Frontend: User triggers vulnerability validation
+   POST /api/cases/123/validate { severity_score: 8.5 }
+
+2. Backend:
+   - Load case details from database
+   - Call Terminal3Client.executeContract("validate_vulnerability", {...})
+
+3. T3N SDK makes HTTP request to Terminal 3:
+   POST https://api.terminal3.dev/execute
+   {
+     agent_did: "did:t3n:091e8b21792cb47aa...",
+     contract: "validate_vulnerability",
+     input: { case_id: 123, severity: 8.5 }
+   }
+
+4. Terminal 3 Hardware:
+   - Load WASM bytecode from z:vulnbridge:contracts
+   - Execute in TEE with gas metering
+   - Check authority: read z:vulnbridge:authority
+   - If agent_can_validate == true:
+     - Run contract logic
+     - Create output payload
+     - Sign output with agent private key
+     - Write to z:vulnbridge:action_log
+   - If authority missing/revoked:
+     - Throw exception
+     - Return error
+
+5. T3N returns to Backend:
+   {
+     status: "success",
+     output: {
+       jira_ticket: "SEC-123",
+       agent_did: "did:t3n:...",
+       signature: "0x...",
+       timestamp: "2026-06-17T14:30:00Z"
+     }
+   }
+
+6. Backend:
+   - Verify signature using agent's public key
+   - Store in database: ActionLog { ... }
+   - Call Jira API with agent signature: POST /rest/api/3/issues
+   - Jira receives ticket creation request with X-Agent-Signature header
+   - Jira can optionally verify signature
+
+7. Backend sends WebSocket to frontend:
+   { type: "action_executed", action: "validate", signature: "0x...", timestamp: "..." }
+
+8. Frontend:
+   - Displays: "✓ Validation complete by agent did:t3n:..."
+   - Shows signature with "Verify" button
+   - Timestamp in case details updated
+```
+
+### 6.3 Revocation Flow
+
+```
+1. Frontend: User clicks big red "REVOKE AGENT" button
+   POST /api/authority/revoke { action: "validate" }
+
+2. Backend:
+   - Verify user has revocation permissions
+   - Call Terminal3Client.revokeAuthority("validate")
+   - T3N SDK: updateStorage(z:vulnbridge:authority, agent_can_validate=false)
+
+3. Terminal 3 Hardware:
+   - Verify revocation request is authorized
+   - Update z:vulnbridge:authority
+   - agent_can_validate = false (immutable storage updated)
+   - Revocation takes effect IMMEDIATELY (hardware-enforced)
+
+4. Agent's next authority check:
+   - Before executing action: read z:vulnbridge:authority
+   - agent_can_validate = false (was revoked)
+   - Hardware exception: AUTHORITY_DENIED
+   - Contract execution stops
+
+5. Backend receives revocation confirmation:
+   { success: true, revoked_at: "2026-06-17T14:32:15Z" }
+
+6. T3N sends webhook:
+   POST /webhooks/t3n-revocation
+   {
+     event: "authority_revoked",
+     action: "validate",
+     timestamp: "2026-06-17T14:32:15Z",
+     signature: "0x..."
+   }
+
+7. Backend webhook handler:
+   - Verify webhook signature
+   - Update local cache
+   - Store revocation in database
+   - Send WebSocket to frontend
+
+8. Frontend:
+   - Changes case status to "PAUSED"
+   - Removes "Authorize" buttons
+   - Shows: "Agent authorization revoked by [user] at [time]"
+   - Shows "Re-authorize Agent" button
+```
+
+---
+
+## 7. Deployment Architecture
+
+### 7.1 Local Development
+
+```
+Machine:
+├─ Python venv (Django)
+├─ Node.js (React)
+├─ PostgreSQL 14 (local instance)
+├─ Rust (compile contracts)
+└─ @terminal3/t3n-sdk (npm)
+
+Services:
+├─ Django dev server (port 8000)
+├─ React dev server (port 3000)
+├─ PostgreSQL (port 5432)
+└─ T3N testnet (remote, via SDK)
+```
+
+### 7.2 Production Deployment
+
+```
+Cloud (e.g., AWS):
+├─ Django app (ECS/Lambda)
+├─ React static (S3 + CloudFront)
+├─ PostgreSQL (RDS)
+├─ Redis (ElastiCache, for WebSockets)
+├─ Jira, Slack, SendGrid (external)
+└─ Terminal 3 (production network, via SDK)
+```
+
+---
+
+## 8. Technology Stack
+
+| Component | Technology | Version |
+|-----------|-----------|---------|
+| Backend | Django | 4.2 |
+| REST API | DRF | 3.14.0 |
+| Database | PostgreSQL | 14+ |
+| Frontend | React | 19.2.7 |
+| Frontend Language | TypeScript | 6.0.3 |
+| Agent | Rust | 1.70+ |
+| Agent Target | WASM (wasip2) | - |
+| Agent SDK | @terminal3/t3n-sdk | Latest |
+| WebSocket | Django Channels | 4.0.0 |
+| Auth | JWT | - |
+| ORM | Django ORM | - |
+| API Client | requests | 2.31.0 |
+
+---
+
+## 9. Resilience & Recovery
+
+### 9.1 Contract Execution Failures
+
+**Scenario**: WASM contract throws exception
+
+**Recovery**:
+1. Backend catches exception
+2. Logs failure to database
+3. Logs to T3N audit trail (failed action)
+4. Sends notification to user
+5. Case remains in same status
+6. User can retry action
+
+### 9.2 Network Outage (Backend ↔ T3N)
+
+**Scenario**: Network connection to Terminal 3 lost
+
+**Recovery**:
+1. Backend retries with exponential backoff (max 3 retries)
+2. After retries exhausted: logs error, returns 503 to client
+3. User sees: "Service temporarily unavailable"
+4. Can retry later
+5. T3N action already stored in T3N storage (immutable)
+
+### 9.3 Partial Failures (e.g., Jira call fails after contract succeeds)
+
+**Scenario**: Agent contract executes successfully, but Jira API call fails
+
+**Recovery**:
+1. Contract result logged to T3N (immutable audit trail)
+2. Backend retry queue for Jira call
+3. Eventually succeeds or logs permanent failure
+4. Action logged as "success with external API failure"
+5. User can manually create Jira ticket if needed
+
+---
+
+## 10. Compliance & Auditing
+
+### 10.1 Audit Trail Queryability
+
+```python
+# Example: Query all actions by agent
+audit_log = Terminal3Client.getActionLog(
+    filter={
+        "agent_did": "did:t3n:...",
+        "date_range": ("2026-06-01", "2026-06-30"),
+        "action_type": "validate_vulnerability"
+    }
+)
+
+# Returns immutable, operator-blind log entries with signatures
+# Each entry can be verified independently
+```
+
+### 10.2 Compliance Reports
+
+**Available Reports**:
+- Authority grant/revoke history (who authorized what, when)
+- Action audit trail (what agent did, with signatures)
+- External API calls (who agent called, with signatures)
+- Failed actions (what didn't work, why)
+- Revocation incidents (when authority was revoked, why)
+
+### 10.3 Regulatory Alignment
+
+- **SOC 2**: Immutable audit trail, authority verification, revocation capability
+- **ISO 27001**: Hardware-enforced security, cryptographic signatures, separation of duties
+- **GDPR**: Data retention policies, audit trail access, right to audit
+- **HIPAA**: Authority-driven actions, audit trail, revocation capability
+
