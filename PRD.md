@@ -1,26 +1,37 @@
 # VulnBridge: Product Requirements Document
 
-**Agent-in-TEE Edition** - Vulnerability disclosure automation via cryptographically-verified agent execution
+**Digital Chief of Staff for Vulnerability Disclosures** - Process ownership automation via cryptographically-verified agent execution
 
 ---
 
 ## 1. Problem & Solution
 
 ### Problem
-Vulnerability disclosure requires sequential approvals from multiple teams (Security → Engineering → Legal → Communications), taking **15 hours** while the vulnerability window stays open. Organizations cannot automate this because they have no way to verify:
-- Agent identity (who is acting?)
-- Authorization (was the agent authorized?)
-- Revocation (can we stop the agent instantly?)
-- Audit trail (what actually happened?)
+When a critical vulnerability is discovered, organizations coordinate across five teams:
+
+- **Security team** reviews and validates
+- **Engineering team** develops patch
+- **Legal team** approves disclosure terms
+- **Communications** publishes advisory
+- **Downstream vendors** require embargo coordination
+
+Each team excels at their specialty. But **nobody owns the process** of making sure all pieces work together end-to-end.
+
+Result: Decisions get lost in email, vendors miss embargo dates, legal approval happens too late, coordination becomes manual and chaotic.
+
+**Root cause:** Process ownership falls into the gap between specialists. When the bottleneck is coordination (not expertise), you need someone whose job is making sure things get done.
+
+Traditionally, that's a person (security manager, incident commander) spending their day chasing approvals. That person becomes the constraint on how fast vulnerabilities can be disclosed.
 
 ### Solution
-Deploy VulnBridge Agent inside Terminal 3's Trusted Execution Environment (TEE):
-- **Agent Identity**: DID (did:t3n:...) cryptographically verified
-- **Authorization**: Hardware-enforced (cannot be bypassed by software)
-- **Revocation**: Instant (< 100ms, hardware-level)
-- **Audit Trail**: Immutable, operator-blind, stored in T3N
+Automate the chief of staff role with VulnBridge:
 
-**Result**: Disclosure time reduced to **4 hours** with cryptographic proof of every action.
+1. **Process owner** - Tracks all team approvals, ensures nothing falls through gaps
+2. **Executor** - When authorized, publishes advisories, notifies vendors, updates registries
+3. **Auditable** - Every action cryptographically signed and immutable (Terminal 3)
+4. **Revocable** - At any moment, any stakeholder can halt agent (hardware-enforced)
+
+**Key insight:** You can't replace a human chief of staff with a script. You need a non-human chief of staff with the credibility humans have: verifiable identity, revocable authority, auditable actions. Terminal 3 provides that.
 
 ---
 
@@ -50,12 +61,12 @@ Every action includes:
 
 Four authority types, each independently grantable/revocable:
 
-| Authority | Action | Granted By | Effect |
-|-----------|--------|------------|--------|
-| `validate` | Create Jira ticket | Security team | Agent validates vulnerability |
-| `remediate` | Notify engineers | Engineering team | Agent coordinates patch |
-| `disclose` | Generate CVE | Legal team | Agent prepares disclosure |
-| `publish` | Send notifications | Communications | Agent publishes advisory |
+| Authority | Agent Action | Granted By | Security Control |
+|-----------|---------|------------|------------------|
+| `validate` | Analyzes vulnerability, opens GitHub issue | Security team | Audit trail proves authorization |
+| `remediate` | Opens emergency remediation branch, notifies team | Engineering team | Revocation stops all actions |
+| `disclose` | Publishes GitHub Security Advisory, creates CVE entry | Legal team | Hardware-enforced authority check |
+| `publish` | Notifies vendors, updates package registries, sends emails | Communications | Every action cryptographically signed |
 
 **Authority Lifecycle:**
 1. Team grants: `POST /api/authority/grant` → Backend calls T3N SDK → Authority stored in T3N storage
@@ -216,56 +227,38 @@ Triggers agent to:
 - Update GitHub security advisory
 - Mark case as `closed`
 
-### F8: Jira Integration
+### F8: GitHub Security Advisory Integration
 
-**Requirement**: Jira tickets created by agent include cryptographic proof
+**Requirement**: Agent creates GitHub Security Advisories with cryptographic proof
 
 **Implementation:**
-- Backend calls Jira API: `POST /rest/api/3/issues`
-- Include header: `X-Agent-Signature: 0x...` (DID signature)
-- Ticket body includes: "Created by agent did:t3n:..."
-- Jira can verify signature by checking agent's public key
+- Backend authenticates to GitHub with agent identity
+- Calls GitHub API: `POST /repos/{owner}/{repo}/security/advisories`
+- Advisory body includes: "Published by agent did:t3n:... on {date}"
+- GitHub records agent DID signature in advisory
+- External systems can verify: This advisory was published by verified agent
 
-### F9: Slack Integration
+### F9: CVE and Package Registry Integration
 
-**Requirement**: Slack notifications from agent show agent identity
+**Requirement**: Agent publishes CVE entries with cryptographic proof
 
-**Example message:**
-```
-🤖 VulnBridge Agent (did:t3n:091e8b21792cb47aa...) 
-validated vulnerability CVE-2026-0815 (CVSS 8.5)
+**Implementation:**
+- Agent creates CVE JSON: `{ "id": "CVE-2026-12345", "agent_did": "did:t3n:..." }`
+- Posts to NVD API with agent signature
+- Updates package registries (npm, PyPI, etc.) with advisory
+- Every entry signed by agent DID
+- Registries can verify: This CVE was published by authorized agent
 
-Status: Buffer overflow in authentication handler requires immediate attention
-Ticket: SEC-123 (in Jira)
+### F10: Vendor Notification and Embargo Coordination
 
-[ ✓ Verify Signature ]  [ 📋 View Full Audit Trail ]
-```
+**Requirement**: Agent notifies downstream vendors with cryptographic proof of authorization
 
-Click "Verify Signature" → External verification URL with signature + public key
-
-### F10: SendGrid Email Integration
-
-**Requirement**: Emails include agent identity and signature proof
-
-**Example:**
-```
-Dear Researcher,
-
-Your vulnerability report has been validated and is being processed.
-
-Reported: CVE-2026-0815 (CVSS 8.5)
-Assigned: VulnBridge Agent (did:t3n:...)
-Status: In remediation
-
-To verify this notification was sent by the authorized agent:
-1. Copy signature: 0x...
-2. Visit: https://verify.vulnbridge.io/signature
-3. Paste signature + agent DID
-4. Verification successful means this is authentic
-
-Ticket: SEC-123
-Timeline: 3-5 business days
-```
+**Implementation:**
+- Agent sends emails to vendor security contacts with signature
+- Email includes: "This notification was sent by authorized agent did:t3n:..."
+- Signature allows vendors to verify: Agent was authorized to disclose embargo date
+- Agent tracks embargo dates and sends follow-up notifications
+- All notifications logged with cryptographic proof
 
 ### F11: Webhook Receiver for Revocation
 
@@ -394,7 +387,7 @@ Timeline: 3-5 business days
 
 | Metric | Target | Baseline |
 |--------|--------|----------|
-| Disclosure time | 4 hours | 15 hours |
+| Workflow automation | Verifiable | Manual, unauditable |
 | Authority grant latency | < 1 sec | N/A |
 | Revocation latency | < 100ms | N/A |
 | Audit trail completeness | 100% | N/A |
