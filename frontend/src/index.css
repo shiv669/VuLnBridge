@@ -1,17 +1,230 @@
+/* VulnBridge — Terminal 8-bit Aesthetic */
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=VT323&display=swap');
+
+/* Tailwind v3 — compatible with react-scripts 5 */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+/* ── CSS Variables ─────────────────────────────────────────────────────────── */
+:root {
+  --bg: #050a05;
+  --bg-card: #0a100a;
+  --bg-card-hover: #0f180f;
+  --border: rgba(0, 255, 65, 0.2);
+  --border-active: rgba(0, 255, 65, 0.8);
+  --green: #00ff41;
+  --green-dim: rgba(0, 255, 65, 0.5);
+  --green-glow: rgba(0, 255, 65, 0.15);
+  --red: #ff3333;
+  --red-dim: rgba(255, 51, 51, 0.4);
+  --amber: #ffaa00;
+  --text: #c8ffc8;
+  --text-dim: rgba(200, 255, 200, 0.5);
+  --font-mono: 'Share Tech Mono', 'Courier New', monospace;
+  --font-vt: 'VT323', monospace;
+}
+
+/* ── Base ───────────────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1.6;
+  -webkit-font-smoothing: none;
+  -moz-osx-font-smoothing: unset;
+  min-height: 100vh;
+  overflow-x: hidden;
 }
 
-code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
+/* Scanlines overlay */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.08) 2px,
+    rgba(0, 0, 0, 0.08) 4px
+  );
+  pointer-events: none;
+  z-index: 9999;
 }
 
+@keyframes flicker {
+  0%, 100% { opacity: 1; }
+  92% { opacity: 1; }
+  93% { opacity: 0.97; }
+  94% { opacity: 1; }
+  96% { opacity: 0.95; }
+  97% { opacity: 1; }
+}
+body { animation: flicker 8s infinite; }
+
+/* ── Typography ─────────────────────────────────────────────────────────────── */
+h1, h2, h3, h4 {
+  font-family: var(--font-vt);
+  color: var(--green);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+code, pre { font-family: var(--font-mono); font-size: 0.85em; }
+
+/* ── Cursor Blink ───────────────────────────────────────────────────────────── */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+.cursor::after {
+  content: '█';
+  animation: blink 1s infinite;
+  color: var(--green);
+}
+
+/* ── Terminal Card ──────────────────────────────────────────────────────────── */
+.terminal-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  position: relative;
+}
+.terminal-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, var(--green-glow), transparent 60%);
+  pointer-events: none;
+}
+.terminal-card:hover {
+  border-color: var(--border-active);
+  box-shadow: 0 0 20px var(--green-glow), inset 0 0 20px var(--green-glow);
+  transition: all 0.2s ease;
+}
+
+/* ── Buttons ────────────────────────────────────────────────────────────────── */
+.btn {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  padding: 8px 16px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  position: relative;
+  transition: all 0.15s ease;
+  outline: none;
+}
+.btn::before { content: '> '; color: var(--green-dim); }
+.btn:hover {
+  border-color: var(--green);
+  color: var(--green);
+  background: var(--green-glow);
+  box-shadow: 0 0 10px var(--green-glow);
+}
+.btn:active { transform: scale(0.98); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.btn-green { border-color: var(--green); color: var(--green); background: rgba(0, 255, 65, 0.08); }
+.btn-green:hover { background: rgba(0, 255, 65, 0.2); box-shadow: 0 0 15px rgba(0, 255, 65, 0.3); }
+
+.btn-red { border-color: var(--red); color: var(--red); background: rgba(255, 51, 51, 0.08); }
+.btn-red::before { color: rgba(255, 51, 51, 0.5); }
+.btn-red:hover { background: rgba(255, 51, 51, 0.2); box-shadow: 0 0 15px rgba(255, 51, 51, 0.3); }
+
+/* ── Badge ──────────────────────────────────────────────────────────────────── */
+.badge {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  padding: 2px 8px;
+  border: 1px solid currentColor;
+}
+
+/* ── Glitch ─────────────────────────────────────────────────────────────────── */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px) rotate(-0.5deg); }
+  75% { transform: translateX(4px) rotate(0.5deg); }
+}
+
+/* ── Audit Log ──────────────────────────────────────────────────────────────── */
+.audit-log {
+  background: #020502;
+  border: 1px solid var(--border);
+  font-size: 11px;
+  font-family: var(--font-mono);
+  overflow-y: auto;
+  max-height: 300px;
+  padding: 12px;
+}
+.audit-entry { color: var(--text-dim); padding: 2px 0; border-bottom: 1px solid rgba(0,255,65,0.04); }
+
+/* ── Red Screen ─────────────────────────────────────────────────────────────── */
+@keyframes red-pulse {
+  0%, 100% { background: rgba(255, 0, 0, 0.08); }
+  50% { background: rgba(255, 0, 0, 0.15); }
+}
+
+.revocation-overlay {
+  position: fixed;
+  inset: 0;
+  background: #0a0000;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  animation: red-pulse 1s ease-in-out infinite;
+}
+.revocation-overlay::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(255,0,0,0.05) 2px, rgba(255,0,0,0.05) 4px);
+  pointer-events: none;
+}
+.revocation-title {
+  font-family: var(--font-vt);
+  font-size: clamp(48px, 8vw, 96px);
+  color: var(--red);
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  animation: shake 0.3s ease-in-out infinite;
+  text-shadow: 0 0 30px rgba(255,51,51,0.8), 0 0 60px rgba(255,51,51,0.4);
+}
+
+/* ── Inputs ─────────────────────────────────────────────────────────────────── */
+.terminal-input {
+  background: #020502;
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  padding: 8px 12px;
+  width: 100%;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.terminal-input::placeholder { color: var(--text-dim); }
+.terminal-input:focus { border-color: var(--green); box-shadow: 0 0 8px var(--green-glow); }
+select.terminal-input option { background: #0a100a; }
+
+/* ── Scrollbar ──────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border); }
+::-webkit-scrollbar-thumb:hover { background: var(--green-dim); }
+
+/* ── Utilities ──────────────────────────────────────────────────────────────── */
+.text-green { color: var(--green); }
+.text-red { color: var(--red); }
+.text-amber { color: var(--amber); }
+.text-dim { color: var(--text-dim); }
+.font-vt { font-family: var(--font-vt); }

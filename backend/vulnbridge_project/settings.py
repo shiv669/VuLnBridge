@@ -11,6 +11,18 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 """
 
 from pathlib import Path
+import os
+from dotenv import load_dotenv
+
+# Load .env — handles both UTF-8 and UTF-16 (Windows Notepad saves UTF-16 by default)
+_env_path = Path(__file__).resolve().parent.parent / '.env'
+if _env_path.exists():
+    with open(_env_path, 'rb') as _f:
+        _bom = _f.read(2)
+    # 0xFF 0xFE = UTF-16 LE BOM, 0xFE 0xFF = UTF-16 BE BOM
+    _enc = 'utf-16' if _bom in (b'\xff\xfe', b'\xfe\xff') else 'utf-8'
+    load_dotenv(_env_path, encoding=_enc)
+
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -37,16 +49,19 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    
+    'django.contrib.postgres',   # Required for ArrayField
+
     # Custom apps
     'cases',
     'authority',
     'audit',
     'notifications',
-    
+
     # Third-party apps
     'rest_framework',
+    'rest_framework_simplejwt',
     'corsheaders',
+    'channels',
 ]
 
 MIDDLEWARE = [
@@ -83,17 +98,19 @@ WSGI_APPLICATION = 'vulnbridge_project.wsgi.application'
 
 # Database
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases
+# Credentials are loaded from backend/.env
 
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'vulnbridge',
-        'USER': 'vulnbridge_user',
-        'PASSWORD': 'vulnbridge_password',
-        'HOST': 'localhost',
-        'PORT': '5432',
+        'NAME': os.getenv('DB_NAME', 'vulnbridge'),
+        'USER': os.getenv('DB_USER', 'vulnbridge_user'),
+        'PASSWORD': os.getenv('DB_PASSWORD', 'vulnbridge_password'),
+        'HOST': os.getenv('DB_HOST', 'localhost'),
+        'PORT': os.getenv('DB_PORT', '5432'),
     }
 }
+
 
 
 # Password validation
@@ -138,12 +155,15 @@ STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # REST Framework Configuration
+# AllowAny for development so the frontend can call without JWT setup.
+# Switch DEFAULT_PERMISSION_CLASSES to IsAuthenticated in production.
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'rest_framework.authentication.SessionAuthentication',
     ),
     'DEFAULT_PERMISSION_CLASSES': (
-        'rest_framework.permissions.IsAuthenticated',
+        'rest_framework.permissions.AllowAny',  # Dev: switch to IsAuthenticated in prod
     ),
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 100,
@@ -158,3 +178,17 @@ CORS_ALLOWED_ORIGINS = [
 ]
 
 CORS_ALLOW_CREDENTIALS = True
+
+# Django Channels (WebSocket) configuration
+ASGI_APPLICATION = 'vulnbridge_project.asgi.application'
+
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels.layers.InMemoryChannelLayer',
+    },
+}
+
+# Terminal 3 Configuration (loaded from .env)
+T3N_AGENT_DID = os.getenv('T3N_AGENT_DID', '')
+T3N_API_KEY = os.getenv('T3N_API_KEY', '')
+T3N_API_URL = os.getenv('T3N_API_URL', 'https://api.terminal3.dev')

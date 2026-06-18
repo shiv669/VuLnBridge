@@ -1,6 +1,7 @@
 from django.db import models
 from django.contrib.postgres.fields import ArrayField
 
+
 class VulnerabilityCase(models.Model):
     STATUS_CHOICES = [
         ('submitted', 'Submitted'),
@@ -9,21 +10,22 @@ class VulnerabilityCase(models.Model):
         ('disclosed', 'Disclosed'),
         ('closed', 'Closed'),
     ]
-    
+
     case_id = models.CharField(max_length=36, unique=True, primary_key=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    
+
     title = models.CharField(max_length=256)
     description = models.TextField()
-    severity_score = models.FloatField()
-    affected_systems = ArrayField(models.CharField(max_length=255))
-    
+    severity_score = models.FloatField(default=0.0)
+    affected_systems = ArrayField(models.CharField(max_length=255), default=list)
+
     researcher_email = models.EmailField()
     researcher_name = models.CharField(max_length=255, blank=True)
-    
+
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='submitted')
-    current_workflow_stage = models.CharField(max_length=50)
+    current_workflow_stage = models.CharField(max_length=50, blank=True, default='submission')
+
     
     class Meta:
         db_table = 'vulnerability_cases'

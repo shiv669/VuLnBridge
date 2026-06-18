@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from vulnbridge.cases.models import VulnerabilityCase, AuthorityDelegation, AuditLog
+from cases.models import VulnerabilityCase, AuthorityDelegation, AuditLog
 
 class VulnerabilityCaseSerializer(serializers.ModelSerializer):
     class Meta:
