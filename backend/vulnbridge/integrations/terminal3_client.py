@@ -311,6 +311,10 @@ class Terminal3Client:
             os.getenv('TERMINAL3_API_URL') or
             os.getenv('T3N_BASE_URL', 'https://api.terminal3.dev')
         )
+        # Contract info for reading authority via contract (once deployed)
+        self.contract_id = os.getenv('T3N_AUTHORITY_CONTRACT_ID')
+        self.contract_version = os.getenv('T3N_AUTHORITY_CONTRACT_VERSION', '1')
+        
         _ensure_helper()
 
         if not self.demo_key:
@@ -321,7 +325,13 @@ class Terminal3Client:
 
     def _call(self, op: str, **kwargs) -> Dict[str, Any]:
         """Invoke the Node.js T3N helper with the given operation."""
-        payload = json.dumps({"op": op, **kwargs})
+        # Add contract info if available (needed for contract-based reads)
+        payload_dict = {"op": op, **kwargs}
+        if self.contract_id:
+            payload_dict["contract_id"] = self.contract_id
+            payload_dict["contract_version"] = self.contract_version
+        
+        payload = json.dumps(payload_dict)
         try:
             result = subprocess.run(
                 ['node', str(_NODE_HELPER), payload],

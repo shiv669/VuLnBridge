@@ -51,7 +51,7 @@ if (fs.existsSync(envPath)) {
 }
 
 const args = JSON.parse(process.argv[2] || '{}');
-const { op, action, case_id, granted_by, input_data } = args;
+const { op, action, case_id, granted_by, input_data, contract_id, contract_version } = args;
 
 // Get agent credentials from env
 const AGENT_KEY = process.env.TERMINAL3_AGENT_KEY || process.env.T3N_DEMO_KEY;
@@ -103,7 +103,7 @@ async function ensureMapExists(tenantClient, mapTail) {
       tail: actualTail,
       visibility: visibility,
       writers: { only: [] },  // Control ops bypass anyway
-      readers: { only: [] },  // Try with empty to see if public visibility helps
+      readers: { only: contract_id ? [parseInt(contract_id)] : [] },  // Contract reads via kv-store
     });
   } catch (e) {
     // Ignore "already exists" errors - they're idempotent
@@ -112,6 +112,34 @@ async function ensureMapExists(tenantClient, mapTail) {
         !e.message.includes('already exists')) {
       // Silently ignore other creation errors
     }
+  }
+}
+
+async function checkAuthorityViaContract(t3nClient, agentDid, action) {
+  if (!contract_id || !contract_version) {
+    // Contract not deployed yet - check is unavailable
+    return null;
+  }
+
+  try {
+    // Call the authority-checker contract function
+    // The contract reads from KV store via kv-store.get
+    const result = await t3nClient.executeAndDecode({
+      script_name: `z:${agentDid.replace('did:t3n:', '')}:authority-checker`,
+      script_version: contract_version,
+      function_name: "check-authority",
+      input: { action }
+    });
+
+    return {
+      authorized: result === true,
+      t3n_verified: true,
+      action,
+      t3n_proof: `t3n:contract:authority-checker:${action}`,
+      checked_at: new Date().toISOString()
+    };
+  } catch (e) {
+    throw new Error(`Contract call failed: ${e.message}`);
   }
 }
 
@@ -216,18 +244,47 @@ async function main() {
         const mapTail = 'authorities';
         const key = `authority:${action}`;
 
-        let value = null;
-        try {
-          // Use correct executeControl signature for reading: (operationName, params)
-          value = await tenantClient.executeControl('map-entry-get', {
-            map_name: tenantClient.canonicalName(mapTail),
-            key,
-          });
-        } catch (e) {
-          // Map or key doesn't exist yet — authority not granted
+        // Try to read via contract if deployed
+        // The contract reads from KV store via kv-store.get
+        // This is necessary because map-entry-get does not exist as a control op
+        // (writes via map-entry-set, reads must happen from inside a contract)
+        
+        let authResult = null;
+        if (contract_id && contract_version) {
+          try {
+            authResult = await checkAuthorityViaContract(t3nClient, did, action);
+          } catch (e) {
+            // Contract call failed - return error
+            console.log(JSON.stringify({
+              authorized: false,
+              t3n_verified: false,
+              action,
+              error: e.message,
+              reason: 'contract_read_failed',
+              details: 'Authority contract not deployed or accessible',
+              agent_did: did,
+              checked_at: new Date().toISOString(),
+            }));
+            break;
+          }
+        } else {
+          // Contract not deployed - authority check not available via T3N
+          console.log(JSON.stringify({
+            authorized: false,
+            t3n_verified: false,
+            action,
+            storage_key: key,
+            storage_map: `z:vulnbridge:${mapTail}`,
+            reason: 'authority_contract_not_deployed',
+            details: 'Deploy authority-checker contract with contract_id and contract_version to enable T3N-native reads',
+            note: 'Writes to T3N are working via map-entry-set. Contract deployment required for reads.',
+            agent_did: did,
+            checked_at: new Date().toISOString(),
+          }));
+          break;
         }
 
-        if (!value) {
+        if (!authResult) {
           console.log(JSON.stringify({
             authorized: false,
             t3n_verified: true,
@@ -241,61 +298,48 @@ async function main() {
           break;
         }
 
-        let parsed = null;
-        try { parsed = JSON.parse(value); } catch {}
-
         console.log(JSON.stringify({
-          authorized: parsed?.authorized === true,
-          t3n_verified: true,
-          action,
+          ...authResult,
           storage_key: key,
           storage_map: `z:vulnbridge:${mapTail}`,
           agent_did: did,
-          granted_by: parsed?.granted_by,
-          granted_at: parsed?.granted_at,
-          revoked_at: parsed?.revoked_at,
-          t3n_proof: `t3n:authorities/${key}:${parsed?.authorized ? 'true' : 'false'}`,
-          checked_at: new Date().toISOString(),
         }));
         break;
       }
 
       case 'exec': {
-        // Step 1: Check authority
-        const authMapTail = 'authorities';
-        const authKey = `authority:${action}`;
+        // Step 1: Check authority via contract
+        // Authority is stored in KV, contract reads it via kv-store.get
         
-        let authValue = null;
-        try {
-          authValue = await tenantClient.executeControl('map-entry-get', {
-            map_name: tenantClient.canonicalName(authMapTail),
-            key: authKey,
-          });
-        } catch (e) {
-          // Not found
-        }
-
         let authData = null;
-        if (authValue) {
-          try { authData = JSON.parse(authValue); } catch {}
-        }
-
-        if (!authData || authData.authorized !== true) {
+        if (contract_id && contract_version) {
+          try {
+            authData = await checkAuthorityViaContract(t3nClient, did, action);
+            if (!authData || authData.authorized !== true) {
+              throw new Error('Authority revoked or not found');
+            }
+          } catch (e) {
+            console.log(JSON.stringify({
+              success: false,
+              error: 'AUTHORITY_CHECK_FAILED',
+              message: `Could not verify authority for ${action}: ${e.message}`,
+              contract: action,
+              t3n_verification: {
+                checked_at: new Date().toISOString(),
+                agent_did: did,
+                authority_key: `authority:${action}`,
+                result: false,
+              },
+            }));
+            break;
+          }
+        } else {
           console.log(JSON.stringify({
             success: false,
-            error: 'AUTHORITY_REVOKED',
-            message: authData
-              ? `Authority for ${action} was revoked at ${authData.revoked_at}`
-              : `No authority record found in T3N TEE for ${action}`,
+            error: 'AUTHORITY_CONTRACT_NOT_DEPLOYED',
+            message: 'Authority-checker contract not deployed. Cannot verify authority.',
             contract: action,
-            t3n_verification: {
-              checked_at: new Date().toISOString(),
-              agent_did: did,
-              authority_key: authKey,
-              result: false,
-              proof: `t3n:authorities/${authKey}:false`,
-              revoked_at: authData?.revoked_at,
-            },
+            details: 'Deploy the contract and pass contract_id + contract_version',
           }));
           break;
         }
@@ -308,7 +352,7 @@ async function main() {
           timestamp: new Date().toISOString(),
           agent_did: did,
           result: 'success',
-          proof_of_authority: authKey,
+          proof_of_authority: `authority:${action}`,
         });
 
         // Append to log (use timestamp as key to ensure uniqueness)

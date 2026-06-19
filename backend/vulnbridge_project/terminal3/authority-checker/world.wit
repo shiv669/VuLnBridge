@@ -1,0 +1,6 @@
+package vulnbridge:authority
+
+world host {
+  export check-authority: func(action: string) -> bool
+  export get-authority: func(action: string) -> option<string>
+}
