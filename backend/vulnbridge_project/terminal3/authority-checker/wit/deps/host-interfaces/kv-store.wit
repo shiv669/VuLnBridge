@@ -1,0 +1,5 @@
+package host:interfaces@2.1.0;
+
+interface kv-store {
+    get: func(map-name: string, key: list<u8>) -> result<option<list<u8>>, string>;
+}

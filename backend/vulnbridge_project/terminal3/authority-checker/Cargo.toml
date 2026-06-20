@@ -1,13 +1,16 @@
 [package]
 name = "authority-checker"
-version = "0.1.0"
+version = "0.7.0"
 edition = "2021"
 
 [lib]
 crate-type = ["cdylib"]
 
 [dependencies]
-wit-bindgen = "0.20"
+wit-bindgen = { version = "0.36.0", default-features = false, features = ["macros", "realloc"] }
+serde = { version = "1.0", default-features = false, features = ["derive", "alloc"] }
+serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
+hex = { version = "0.4", default-features = false, features = ["alloc"] }
 
 [profile.release]
 opt-level = "z"

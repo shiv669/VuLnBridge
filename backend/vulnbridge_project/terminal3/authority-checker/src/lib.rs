@@ -1,65 +1,59 @@
-// Authority Checker Contract
-// Reads authority records from the tenant KV store
-// Must be added to the "authorities" map's readers ACL
-
-use std::str;
-
-// Import the host KV store capability via wit-bindgen
 wit_bindgen::generate!({
-    world: "host",
-    exports: {
-        "vulnbridge:authority/host": Host,
-    }
+    world: "authority-checker",
+    path: "wit",
+    additional_derives: [
+        serde::Deserialize,
+        serde::Serialize,
+    ],
+    generate_all,
 });
 
-struct Host;
+use serde::{Deserialize, Serialize};
 
-impl vulnbridge::authority::Host for Host {
-    /// Check if an authority record exists and is granted
-    fn check_authority(action: String) -> bool {
-        let key = format!("authority:{}", action);
-        
-        // Read from the authorities map via kv_store
-        match read_kv("authorities", &key) {
-            Some(value) => {
-                // Parse JSON to check if authorized is true
-                if let Ok(json_str) = str::from_utf8(&value) {
-                    json_str.contains("\"authorized\":true")
-                } else {
-                    false
-                }
-            }
-            None => false,
-        }
-    }
+#[derive(Deserialize)]
+struct ActionInput {
+    action: String,
+    map_tail: String,
+}
 
-    /// Get the full authority record as a JSON string
-    fn get_authority(action: String) -> Option<String> {
-        let key = format!("authority:{}", action);
+#[derive(Serialize)]
+struct AuthResponse {
+    authorized: bool,
+}
+
+struct Component;
+
+impl exports::z::vulnbridge_authority::contracts::Guest for Component {
+    fn check_authority(req: exports::z::vulnbridge_authority::contracts::GenericInput) -> Result<Vec<u8>, String> {
+        let input_bytes = req.input.ok_or("check-authority: missing input")?;
         
-        // Read from the authorities map via kv_store
-        match read_kv("authorities", &key) {
-            Some(value) => {
-                if let Ok(json_str) = str::from_utf8(&value) {
-                    Some(json_str.to_string())
-                } else {
-                    None
-                }
+        let input: ActionInput = serde_json::from_slice(&input_bytes)
+            .map_err(|e| format!("failed to parse input: {}", e))?;
+            
+        let tid = host::tenant::tenant_context::tenant_did();
+        let map_name = format!("z:{}:{}", hex::encode(&tid), input.map_tail);
+        let key_str = format!("authority:{}", input.action);
+        
+        let bytes_opt = host::interfaces::kv_store::get(&map_name, key_str.as_bytes())
+            .map_err(|e| format!("kv read error: {}", e))?;
+            
+        match bytes_opt {
+            Some(bytes) => {
+                let value_str = String::from_utf8_lossy(&bytes);
+                let authorized = value_str.contains("\"authorized\":true") || value_str.contains("\"authorized\": true");
+                
+                let response = AuthResponse { authorized };
+                let resp_bytes = serde_json::to_vec(&response).map_err(|e| e.to_string())?;
+                Ok(resp_bytes)
             }
-            None => None,
+            None => {
+                let response = AuthResponse { authorized: false };
+                let resp_bytes = serde_json::to_vec(&response).map_err(|e| e.to_string())?;
+                Ok(resp_bytes)
+            }
         }
     }
 }
 
-/// Helper function to read from KV store
-/// This would use the actual kv-store host interface
-/// For now, this is a placeholder - the actual implementation
-/// requires importing the kv-store interface from the T3N host
-fn read_kv(map_name: &str, key: &str) -> Option<Vec<u8>> {
-    // This calls the host's kv-store.get capability
-    // The actual binding depends on the T3N ADK WIT definitions
-    
-    // Placeholder - would be implemented via WIT host imports
-    // The host provides: kv-store.get(map_name: string, key: string) -> option<vector<u8>>
-    None
-}
+#[cfg(target_arch = "wasm32")]
+export!(Component);

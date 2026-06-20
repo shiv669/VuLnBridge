@@ -36,8 +36,41 @@ BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
 _NODE_HELPER = BACKEND_DIR / "t3n_helper.mjs"
 
 
+def _load_dotenv():
+    """Load backend/.env into os.environ so subprocess inherits all keys."""
+    env_file = BACKEND_DIR / ".env"
+    if not env_file.exists():
+        return
+    try:
+        raw = env_file.read_bytes()
+        # Handle UTF-16 LE BOM (VS Code default on Windows)
+        if raw[:2] in (b'\xff\xfe', b'\xfe\xff'):
+            content = raw.decode('utf-16')
+        else:
+            content = raw.decode('utf-8', errors='replace')
+        for line in content.splitlines():
+            line = line.strip()
+            if not line or line.startswith('#') or '=' not in line:
+                continue
+            key, _, val = line.partition('=')
+            key = key.strip()
+            val = val.strip().strip('"').strip("'")
+            if key:
+                os.environ[key] = val
+    except Exception as e:
+        logging.getLogger(__name__).debug("Could not load .env: %s", e)
+
+
+_load_dotenv()  # Run once at import time
+
+
 def _ensure_helper():
-    """Write the Node.js SDK helper to disk (always regenerate to pick up latest env var names)."""
+    """
+    Write the Node.js SDK helper to disk only if it doesn't exist yet.
+    t3n_helper.mjs is now a permanent file managed directly — do NOT overwrite it.
+    """
+    if _NODE_HELPER.exists():
+        return  # File is already on disk and correct — don't touch it
 
     helper_code = r"""
 /**
@@ -314,6 +347,7 @@ class Terminal3Client:
         # Contract info for reading authority via contract (once deployed)
         self.contract_id = os.getenv('T3N_AUTHORITY_CONTRACT_ID')
         self.contract_version = os.getenv('T3N_AUTHORITY_CONTRACT_VERSION', '1')
+        self._auth_cache = {}
         
         _ensure_helper()
 
@@ -344,7 +378,9 @@ class Terminal3Client:
 
             if result.returncode != 0:
                 stderr = result.stderr.strip()
-                raise RuntimeError(f"T3N SDK error (exit {result.returncode}):\n{stderr}")
+                stdout = result.stdout.strip()
+                err_msg = stderr if stderr else stdout
+                raise RuntimeError(f"T3N SDK error (exit {result.returncode}):\n{err_msg}")
 
             stdout = result.stdout.strip()
             if not stdout:
@@ -366,15 +402,27 @@ class Terminal3Client:
 
     def grant_authority(self, action: str, granted_by: str) -> Dict:
         """Store authority=true in T3N TEE KV for action."""
+        if hasattr(self, '_auth_cache'): self._auth_cache.pop(action, None)
         return self._call('grant', action=action, granted_by=granted_by)
 
     def revoke_authority(self, action: str) -> Dict:
         """Store authority=false in T3N TEE KV — immediate effect."""
+        if hasattr(self, '_auth_cache'): self._auth_cache.pop(action, None)
         return self._call('revoke', action=action)
 
     def get_authority(self, action: str) -> Dict:
         """Read current authority from T3N TEE KV. Hardware-verified."""
-        return self._call('check', action=action)
+        if not hasattr(self, '_auth_cache'):
+            self._auth_cache = {}
+        
+        # Indefinite cache to prevent rate limit exhaustion.
+        # Cache is explicitly cleared when grant_authority or revoke_authority are called.
+        if action in self._auth_cache:
+            return self._auth_cache[action]
+            
+        result = self._call('check', action=action)
+        self._auth_cache[action] = result
+        return result
 
     def execute_contract(self, contract_name: str, input_data: Dict) -> Dict:
         """

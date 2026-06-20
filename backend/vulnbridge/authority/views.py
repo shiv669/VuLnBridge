@@ -47,11 +47,13 @@ def grant_authority(request):
         # Write authority to T3N hardware storage
         t3n_result = terminal3_client.grant_authority(action_name, granted_by)
 
-        # Record in local DB for audit history
+        # Record in local DB for audit history (includes T3N proof)
         grant = AuthorityGrant.objects.create(
             grant_id=f"{action_name}:{uuid.uuid4().hex[:12]}",
             action=action_name,
             granted_by=granted_by,
+            t3n_proof=t3n_result.get('t3n_proof', ''),
+            agent_did=t3n_result.get('agent_did', ''),
         )
 
         response_data = {
@@ -140,7 +142,7 @@ def revoke_authority(request):
 def authority_status(request):
     """
     Check current authority status — reads live from T3N storage.
-    Result is authoritative (hardware-verified, not from local DB).
+    Result is authoritative (hardware-verified).
     """
     action_name = request.query_params.get('action')
 
@@ -149,11 +151,6 @@ def authority_status(request):
 
     try:
         t3n_status = terminal3_client.get_authority(action_name)
-
-        # Augment with local DB history
-        grant = AuthorityGrant.objects.filter(
-            action=action_name
-        ).order_by('-granted_at').first()
 
         return Response({
             "action": action_name,
@@ -172,11 +169,12 @@ def authority_status(request):
         return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
+
 @api_view(['GET'])
 def all_authority_status(request):
     """
     Returns status for all 4 authority types in one call.
-    Used by frontend to populate the authority panel on load.
+    Reads from T3N Contract.
     """
     actions = ['validate', 'remediate', 'disclose', 'publish']
     results = {}
@@ -194,6 +192,7 @@ def all_authority_status(request):
                 "checked_at": t3n_status.get('checked_at'),
             }
         except Exception as e:
+            logger.error(f"all_authority_status error for {action_name}: {str(e)}")
             results[action_name] = {"authorized": False, "error": str(e)}
 
     return Response(results)

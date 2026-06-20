@@ -15,9 +15,11 @@ class AuthorityGrant(models.Model):
     granted_by = models.EmailField()
     granted_at = models.DateTimeField(auto_now_add=True)
     revoked_at = models.DateTimeField(null=True, blank=True)
+    t3n_proof = models.TextField(blank=True, default='')  # T3N proof from map-entry-set
+    agent_did = models.TextField(blank=True, default='')  # DID of the T3N agent
 
     class Meta:
-        app_label = 'authority'   # ties to the 'authority' app in INSTALLED_APPS
+        app_label = 'authority'
         db_table = 'authority_grants'
 
     def is_active(self):
