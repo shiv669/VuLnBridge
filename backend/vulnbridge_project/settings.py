@@ -97,21 +97,36 @@ TEMPLATES = [
 WSGI_APPLICATION = 'vulnbridge_project.wsgi.application'
 ASGI_APPLICATION = 'vulnbridge_project.asgi.application'
 
+import urllib.parse
 
 # Database
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases
-# Credentials are loaded from backend/.env
+# Credentials are loaded from backend/.env or Render DATABASE_URL
 
-DATABASES = {
-    'default': {
-        'ENGINE': os.getenv('DATABASE_ENGINE', 'django.db.backends.postgresql'),
-        'NAME': os.getenv('PGDATABASE', os.getenv('DATABASE_NAME', 'vulnbridge')),
-        'USER': os.getenv('PGUSER', os.getenv('DATABASE_USER', 'vulnbridge_user')),
-        'PASSWORD': os.getenv('PGPASSWORD', os.getenv('DATABASE_PASSWORD', 'vulnbridge_password')),
-        'HOST': os.getenv('PGHOST', os.getenv('DATABASE_HOST', 'localhost')),
-        'PORT': os.getenv('PGPORT', os.getenv('DATABASE_PORT', '5432')),
+db_url = os.getenv('DATABASE_URL')
+if db_url:
+    parsed_db = urllib.parse.urlparse(db_url)
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': parsed_db.path[1:],
+            'USER': parsed_db.username,
+            'PASSWORD': parsed_db.password,
+            'HOST': parsed_db.hostname,
+            'PORT': parsed_db.port or '5432',
+        }
     }
-}
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': os.getenv('DATABASE_ENGINE', 'django.db.backends.postgresql'),
+            'NAME': os.getenv('PGDATABASE', os.getenv('DATABASE_NAME', 'vulnbridge')),
+            'USER': os.getenv('PGUSER', os.getenv('DATABASE_USER', 'vulnbridge_user')),
+            'PASSWORD': os.getenv('PGPASSWORD', os.getenv('DATABASE_PASSWORD', 'vulnbridge_password')),
+            'HOST': os.getenv('PGHOST', os.getenv('DATABASE_HOST', 'localhost')),
+            'PORT': os.getenv('PGPORT', os.getenv('DATABASE_PORT', '5432')),
+        }
+    }
 
 
 
