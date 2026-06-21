@@ -92,8 +92,8 @@ async function ensureMapExists(tenantClient, mapName, contractId) {
     await tenantClient.maps.create({
       tail: mapName,
       visibility: 'private',
-      writers: { all: true },
-      readers: { all: true },
+      writers: 'all',
+      readers: 'all',
     });
   } catch (e) {
     if (!e.message.includes('already exists') && !e.message.includes('MapAlreadyExists')) {
