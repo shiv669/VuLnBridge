@@ -5,7 +5,6 @@ import type {
   AllAuthorityStatus,
   AuditEntry,
   ContractResult,
-  AuthorityStatus,
 } from '../lib/api';
 
 // ── WebSocket Event Types ────────────────────────────────────────────────────
