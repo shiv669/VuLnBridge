@@ -4,8 +4,14 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useVulnBridgeStore } from '../store/vulnbridge';
 
-const WS_URL = (caseId: string) =>
-  `ws://${window.location.hostname}:8000/ws/cases/${caseId}/`;
+const getBaseWsUrl = () => {
+  if (process.env.REACT_APP_WS_URL) {
+    return process.env.REACT_APP_WS_URL;
+  }
+  return `ws://${window.location.hostname}:8000/ws`;
+};
+
+const WS_URL = (caseId: string) => `${getBaseWsUrl()}/cases/${caseId}/`;
 
 export function useWebSocket(caseId: string | null) {
   const wsRef = useRef<WebSocket | null>(null);
