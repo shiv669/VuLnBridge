@@ -435,7 +435,8 @@ class Terminal3Client:
         Checks authority from TEE KV before executing.
         Returns AUTHORITY_REVOKED dict if revoked (not an exception).
         """
-        return self._call('exec', action=contract_name, input_data=input_data)
+        case_id = input_data.get('case_id') if input_data else None
+        return self._call('exec', action=contract_name, case_id=case_id, input_data=input_data)
 
     def get_action_log(self, case_id: Optional[str] = None) -> list:
         """Read the immutable action log from T3N TEE KV."""
