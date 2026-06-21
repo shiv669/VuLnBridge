@@ -19,5 +19,5 @@ RUN npm install
 # Copy the rest of the backend code
 COPY . .
 
-# Run Django migrations and start gunicorn
-CMD python manage.py migrate && gunicorn vulnbridge_project.wsgi:application --bind 0.0.0.0:$PORT
+# Run Django migrations and start Daphne (ASGI) for WebSocket support
+CMD python manage.py migrate && daphne -b 0.0.0.0 -p ${PORT:-8000} vulnbridge_project.asgi:application
