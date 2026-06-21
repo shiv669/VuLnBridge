@@ -92,8 +92,8 @@ async function ensureMapExists(tenantClient, mapName, contractId) {
     await tenantClient.maps.create({
       tail: mapName,
       visibility: 'private',
-      writers: 'all',
-      readers: 'all',
+      writers: { only: contractId ? [parseInt(contractId)] : [] },
+      readers: { only: contractId ? [parseInt(contractId)] : [] },
     });
   } catch (e) {
     if (!e.message.includes('already exists') && !e.message.includes('MapAlreadyExists')) {
@@ -106,9 +106,9 @@ async function main() {
   try {
     const { t3nClient, tenantClient, did } = await getClient();
 
-    // Use a per-case authority map if case_id is provided, otherwise fallback to global
-    // T3N Map names MUST be <= 32 bytes. case_id is ~19 bytes, so "auth-" + case_id = 24 bytes.
-    const contractMapName = case_id ? `auth-${case_id}` : `auth-${contract_id}`;
+    // T3N Map names MUST be <= 32 bytes and LOWERCASE.
+    const safeCaseId = case_id ? case_id.toLowerCase() : '';
+    const contractMapName = case_id ? `auth-${safeCaseId}` : `auth-${contract_id}`;
 
     // Ensure the authorities map exists (idempotent)
     if (['grant', 'revoke', 'check', 'exec'].includes(op)) {
