@@ -26,62 +26,52 @@ export function WorkflowTimeline({ currentStage, status }: Props) {
   const currentIdx = stageIndex(currentStage);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+    <div className="flex flex-col">
       {STAGES.map((stage, i) => {
-        const isDone = i < currentIdx;
-        const isActive = i === currentIdx;
+        const isDone = i < currentIdx || (currentStage === 'closed' && i === currentIdx);
+        const isActive = i === currentIdx && currentStage !== 'closed';
 
         return (
-          <div key={stage.key} style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+          <div key={stage.key} className="flex items-start gap-4">
             {/* Dot + line */}
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 12, flexShrink: 0 }}>
+            <div className="flex flex-col items-center w-3 shrink-0">
               <div
-                style={{
-                  width: 12,
-                  height: 12,
-                  border: `2px solid ${isDone ? 'var(--green)' : isActive ? 'var(--green)' : 'rgba(0,255,65,0.2)'}`,
-                  background: isDone ? 'var(--green)' : 'transparent',
-                  boxShadow: isDone || isActive ? '0 0 6px rgba(0,255,65,0.5)' : undefined,
-                  animation: isActive ? 'blink 1s infinite' : undefined,
-                  marginTop: 2,
-                }}
+                className={`w-3 h-3 border-2 mt-1 transition-all ${
+                  isDone 
+                    ? 'border-blue-500 bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.5)]' 
+                    : isActive 
+                    ? 'border-blue-400 animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.3)]' 
+                    : 'border-white/20 bg-transparent'
+                }`}
               />
               {i < STAGES.length - 1 && (
                 <div
-                  style={{
-                    width: 2,
-                    height: 36,
-                    background: isDone ? 'var(--green)' : 'rgba(0,255,65,0.15)',
-                  }}
+                  className={`w-[2px] h-10 ${
+                    isDone ? 'bg-blue-500' : 'bg-white/10'
+                  }`}
                 />
               )}
             </div>
 
             {/* Content */}
-            <div style={{ paddingBottom: 24, paddingTop: 0 }}>
+            <div className="pb-6">
               <div
-                style={{
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: 12,
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.08em',
-                  color: isDone
-                    ? 'var(--green)'
+                className={`font-mono text-sm tracking-widest uppercase transition-colors ${
+                  isDone
+                    ? 'text-blue-400'
                     : isActive
-                    ? 'var(--text)'
-                    : 'var(--text-dim)',
-                }}
+                    ? 'text-white'
+                    : 'text-white/40'
+                }`}
               >
-                {isActive && <span style={{ color: 'var(--green)', marginRight: 4 }}>▶</span>}
-                {isDone && <span style={{ marginRight: 4 }}>✓</span>}
+                {isActive && <span className="text-blue-400 mr-2">▶</span>}
+                {isDone && <span className="mr-2">✓</span>}
                 {stage.label}
               </div>
               <div
-                style={{
-                  fontSize: 10,
-                  color: isDone ? 'rgba(0,255,65,0.5)' : 'var(--text-dim)',
-                  marginTop: 2,
-                }}
+                className={`text-[11px] mt-1 tracking-wide ${
+                  isDone ? 'text-blue-400/50' : 'text-white/30'
+                }`}
               >
                 {stage.desc}
               </div>

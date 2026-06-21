@@ -32,17 +32,18 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure--q5p!_kxm8dl5znn4tjc6-vgdm-=0)&7uj3mykum2m$07y(m#6'
+SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure--q5p!_kxm8dl5znn4tjc6-vgdm-=0)&7uj3mykum2m$07y(m#6')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.getenv('DJANGO_DEBUG', 'True') == 'True'
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = os.getenv('DJANGO_ALLOWED_HOSTS', '127.0.0.1,localhost').split(',')
 
 
 # Application definition
 
 INSTALLED_APPS = [
+    'daphne',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -94,6 +95,7 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'vulnbridge_project.wsgi.application'
+ASGI_APPLICATION = 'vulnbridge_project.asgi.application'
 
 
 # Database
@@ -102,12 +104,12 @@ WSGI_APPLICATION = 'vulnbridge_project.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.getenv('DB_NAME', 'vulnbridge'),
-        'USER': os.getenv('DB_USER', 'vulnbridge_user'),
-        'PASSWORD': os.getenv('DB_PASSWORD', 'vulnbridge_password'),
-        'HOST': os.getenv('DB_HOST', 'localhost'),
-        'PORT': os.getenv('DB_PORT', '5432'),
+        'ENGINE': os.getenv('DATABASE_ENGINE', 'django.db.backends.postgresql'),
+        'NAME': os.getenv('PGDATABASE', os.getenv('DATABASE_NAME', 'vulnbridge')),
+        'USER': os.getenv('PGUSER', os.getenv('DATABASE_USER', 'vulnbridge_user')),
+        'PASSWORD': os.getenv('PGPASSWORD', os.getenv('DATABASE_PASSWORD', 'vulnbridge_password')),
+        'HOST': os.getenv('PGHOST', os.getenv('DATABASE_HOST', 'localhost')),
+        'PORT': os.getenv('PGPORT', os.getenv('DATABASE_PORT', '5432')),
     }
 }
 
@@ -170,23 +172,35 @@ REST_FRAMEWORK = {
 }
 
 # CORS Configuration
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "http://localhost:8000",
-    "http://127.0.0.1:8000",
-]
+CORS_ALLOWED_ORIGINS = os.getenv(
+    'CORS_ALLOWED_ORIGINS', 
+    'http://localhost:3000,http://127.0.0.1:3000,http://localhost:8000,http://127.0.0.1:8000'
+).split(',')
+
+if os.getenv('CORS_ALLOW_ALL_ORIGINS') == 'True':
+    CORS_ALLOW_ALL_ORIGINS = True
 
 CORS_ALLOW_CREDENTIALS = True
 
 # Django Channels (WebSocket) configuration
 ASGI_APPLICATION = 'vulnbridge_project.asgi.application'
 
-CHANNEL_LAYERS = {
-    'default': {
-        'BACKEND': 'channels.layers.InMemoryChannelLayer',
-    },
-}
+# Use Redis in production, InMemory for local development
+if os.getenv('REDIS_URL') and not DEBUG:
+    CHANNEL_LAYERS = {
+        'default': {
+            'BACKEND': 'channels_redis.core.RedisChannelLayer',
+            'CONFIG': {
+                "hosts": [os.getenv('REDIS_URL')],
+            },
+        },
+    }
+else:
+    CHANNEL_LAYERS = {
+        'default': {
+            'BACKEND': 'channels.layers.InMemoryChannelLayer',
+        },
+    }
 
 # Terminal 3 Configuration (loaded from .env)
 T3N_AGENT_DID = os.getenv('T3N_AGENT_DID', '')

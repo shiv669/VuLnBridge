@@ -107,14 +107,17 @@ async function main() {
   try {
     const { t3nClient, tenantClient, did } = await getClient();
 
-    const contractMapName = `authorities-${contract_id}`;
+    // Use a per-case authority map if case_id is provided, otherwise fallback to global
+    // T3N Map names MUST be <= 32 bytes. case_id is ~19 bytes, so "auth-" + case_id = 24 bytes.
+    const contractMapName = case_id ? `auth-${case_id}` : `auth-${contract_id}`;
 
     // Ensure the authorities map exists (idempotent)
     if (['grant', 'revoke', 'check', 'exec'].includes(op)) {
       await ensureMapExists(tenantClient, contractMapName, contract_id);
     }
     if (op === 'exec' || op === 'log') {
-      await ensureMapExists(tenantClient, 'action_log', contract_id);
+      const logMapName = case_id ? `log-${case_id}` : `log-${contract_id}`;
+      await ensureMapExists(tenantClient, logMapName, contract_id);
     }
 
     switch (op) {

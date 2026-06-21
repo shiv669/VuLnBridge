@@ -45,7 +45,7 @@ def grant_authority(request):
 
     try:
         # Write authority to T3N hardware storage
-        t3n_result = terminal3_client.grant_authority(action_name, granted_by)
+        t3n_result = terminal3_client.grant_authority(action_name, granted_by, case_id=case_id)
 
         # Record in local DB for audit history (includes T3N proof)
         grant = AuthorityGrant.objects.create(
@@ -98,7 +98,7 @@ def revoke_authority(request):
 
     try:
         # Revoke in T3N hardware — immediate effect
-        t3n_result = terminal3_client.revoke_authority(action_name)
+        t3n_result = terminal3_client.revoke_authority(action_name, case_id=case_id)
 
         # Mark any active grants as revoked in local DB
         AuthorityGrant.objects.filter(
@@ -176,12 +176,13 @@ def all_authority_status(request):
     Returns status for all 4 authority types in one call.
     Reads from T3N Contract.
     """
+    case_id = request.query_params.get('case_id')
     actions = ['validate', 'remediate', 'disclose', 'publish']
     results = {}
 
     for action_name in actions:
         try:
-            t3n_status = terminal3_client.get_authority(action_name)
+            t3n_status = terminal3_client.get_authority(action_name, case_id=case_id)
             results[action_name] = {
                 "authorized": t3n_status.get('authorized', False),
                 "t3n_verified": t3n_status.get('t3n_verified', False),

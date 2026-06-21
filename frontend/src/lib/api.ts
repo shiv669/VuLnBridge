@@ -130,8 +130,8 @@ export const vulnbridgeApi = {
     api.post<ContractResult>(`/cases/${caseId}/publish_contract/`),
 
   // Authority
-  getAllAuthorityStatus: () =>
-    api.get<AllAuthorityStatus>('/authority/all/'),
+  getAllAuthorityStatus: (caseId?: string) =>
+    api.get<AllAuthorityStatus>('/authority/all/', caseId ? { params: { case_id: caseId } } : undefined),
 
   getAuthorityStatus: (action: string) =>
     api.get<AuthorityStatus>('/authority/status/', { params: { action } }),

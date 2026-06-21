@@ -7,19 +7,19 @@
 @tailwind utilities;
 /* ── CSS Variables ─────────────────────────────────────────────────────────── */
 :root {
-  --bg: #050a05;
-  --bg-card: #0a100a;
-  --bg-card-hover: #0f180f;
-  --border: rgba(0, 255, 65, 0.2);
-  --border-active: rgba(0, 255, 65, 0.8);
-  --green: #00ff41;
-  --green-dim: rgba(0, 255, 65, 0.5);
-  --green-glow: rgba(0, 255, 65, 0.15);
-  --red: #ff3333;
-  --red-dim: rgba(255, 51, 51, 0.4);
-  --amber: #ffaa00;
-  --text: #c8ffc8;
-  --text-dim: rgba(200, 255, 200, 0.5);
+  --bg: #000000;
+  --bg-card: #0a0a0a;
+  --bg-card-hover: #111111;
+  --border: rgba(255, 255, 255, 0.1);
+  --border-active: rgba(59, 130, 246, 0.5);
+  --green: #3b82f6; /* Repurposed to modern blue */
+  --green-dim: rgba(59, 130, 246, 0.5);
+  --green-glow: rgba(59, 130, 246, 0.15);
+  --red: #ef4444; /* Modern tailwind red */
+  --red-dim: rgba(239, 68, 68, 0.4);
+  --amber: #f59e0b; /* Modern tailwind amber */
+  --text: #ffffff;
+  --text-dim: rgba(255, 255, 255, 0.6);
   --font-mono: 'Share Tech Mono', 'Courier New', monospace;
   --font-vt: 'VT323', monospace;
 }
@@ -228,3 +228,123 @@ select.terminal-input option { background: #0a100a; }
 .text-amber { color: var(--amber); }
 .text-dim { color: var(--text-dim); }
 .font-vt { font-family: var(--font-vt); }
+
+/* ── Cosmic Parallax Component ─────────────────────────────────────────────── */
+
+:root {
+  --animation-iteration: infinite;
+}
+
+.cosmic-parallax-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100vh;
+  overflow: hidden;
+  background: transparent;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.cosmic-stars {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  background: transparent;
+  animation: animStar 50s linear infinite;
+}
+.cosmic-stars::after {
+  content: " ";
+  position: absolute;
+  top: 2000px;
+  width: 1px;
+  height: 1px;
+  background: transparent;
+  box-shadow: inherit;
+}
+
+.cosmic-stars-medium {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 2px;
+  height: 2px;
+  background: transparent;
+  animation: animStar 100s linear infinite;
+}
+.cosmic-stars-medium::after {
+  content: " ";
+  position: absolute;
+  top: 2000px;
+  width: 2px;
+  height: 2px;
+  background: transparent;
+  box-shadow: inherit;
+}
+
+.cosmic-stars-large {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 3px;
+  height: 3px;
+  background: transparent;
+  animation: animStar 150s linear infinite;
+}
+.cosmic-stars-large::after {
+  content: " ";
+  position: absolute;
+  top: 2000px;
+  width: 3px;
+  height: 3px;
+  background: transparent;
+  box-shadow: inherit;
+}
+
+#title {
+  position: absolute;
+  top: 15%;
+  width: 100%;
+  text-align: center;
+  font-family: var(--font-vt);
+  font-size: 64px;
+  color: #FFF;
+  letter-spacing: 0.3em;
+  text-shadow: 0 0 30px rgba(255,255,255,0.8);
+  animation: animGravity 60s var(--animation-iteration);
+}
+
+#subtitle {
+  position: absolute;
+  top: 25%;
+  width: 100%;
+  text-align: center;
+  font-family: var(--font-vt);
+  font-size: 24px;
+  color: rgba(255,255,255,0.7);
+  letter-spacing: 0.2em;
+}
+.subtitle-part-1, .subtitle-part-2, .subtitle-part-3, .subtitle-part-4 { 
+  animation: animSubtitle 60s var(--animation-iteration); 
+  display: inline-block;
+}
+
+@keyframes animStar {
+  from { transform: translateY(0px); }
+  to { transform: translateY(-2000px); }
+}
+
+@keyframes animGravity {
+  0%, 2% { transform: translateY(-26px); opacity: 0; letter-spacing: 10px; }
+  5%, 95% { transform: translateY(0px); opacity: 1; letter-spacing: 15px; }
+  98%, 100% { transform: translateY(-4px); opacity: 0; letter-spacing: 10px; }
+}
+
+@keyframes animSubtitle {
+  0%, 2% { transform: translateY(-26px); opacity: 0; }
+  5%, 95% { transform: translateY(0px); opacity: 1; }
+  98%, 100% { transform: translateY(-4px); opacity: 0; }
+}

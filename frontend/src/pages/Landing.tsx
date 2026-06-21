@@ -3,12 +3,10 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { vulnbridgeApi, Severity } from '../lib/api';
 
-const SEVERITY_COLORS: Record<Severity, string> = {
-  low: '#44ff44',
-  medium: '#ffaa00',
-  high: '#ff6600',
-  critical: '#ff0000',
-};
+import { CosmicParallaxBg } from '../components/ui/parallax-cosmic-background';
+import { ProgressiveFluxLoader } from '../components/ui/progressive-flux-loader';
+
+
 
 export function Landing() {
   const navigate = useNavigate();
@@ -33,6 +31,10 @@ export function Landing() {
     try {
       const resp = await vulnbridgeApi.submitVulnerability(form);
       const { case_id } = resp.data;
+      
+      // Artificial delay to show the cryptographic flux loading animation
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      
       navigate(`/cases/${case_id}`);
     } catch (e: any) {
       setError(e.response?.data?.error || e.response?.data?.title?.[0] || e.message);
@@ -42,39 +44,33 @@ export function Landing() {
   };
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '24px 16px' }}>
-
-      {/* Header */}
-      <div style={{ textAlign: 'center', marginBottom: 48 }}>
-        <div style={{ fontFamily: 'var(--font-vt)', fontSize: 48, color: 'var(--green)', letterSpacing: '0.3em', textShadow: '0 0 30px rgba(0,255,65,0.5)' }}>
-          VULNBRIDGE
-        </div>
-        <div style={{ fontFamily: 'var(--font-vt)', fontSize: 18, color: 'var(--text-dim)', letterSpacing: '0.2em', marginTop: 4 }}>
-          AUTONOMOUS VULNERABILITY DISCLOSURE AGENT
-        </div>
-        <div style={{ marginTop: 16, fontSize: 11, color: 'var(--text-dim)', maxWidth: 500, lineHeight: 1.8 }}>
-          Powered by <span style={{ color: 'var(--amber)' }}>Terminal 3 TEE</span> — hardware-enforced authority delegation
-          for cross-functional security coordination.
-        </div>
-      </div>
-
-      {/* Form */}
-      <form
-        onSubmit={handleSubmit}
-        style={{ width: '100%', maxWidth: 560 }}
-      >
-        <div className="terminal-card" style={{ padding: 32 }}>
-          <div style={{ fontFamily: 'var(--font-vt)', fontSize: 20, color: 'var(--green)', marginBottom: 24, letterSpacing: '0.15em' }}>
-            &gt; SUBMIT VULNERABILITY REPORT
+    <div className="relative min-h-screen w-full flex items-center justify-center p-6 bg-black overflow-hidden" style={{ fontFamily: 'var(--font-vt)' }}>
+      
+      {/* Animated Cosmic Background */}
+      <CosmicParallaxBg 
+        head="VULNBRIDGE" 
+        text="AUTONOMOUS, VULNERABILITY, DISCLOSURE, AGENT" 
+        loop={true}
+        className="fixed inset-0 z-0"
+      />
+      
+      {/* Centered Glassmorphic Form Card */}
+      <div className="relative z-10 w-full max-w-2xl mt-48">
+        <form
+          onSubmit={handleSubmit}
+          className="bg-black/40 backdrop-blur-xl border border-white/10 p-8 rounded-2xl shadow-2xl"
+        >
+          <div className="text-2xl text-white mb-8 tracking-widest text-center">
+            SUBMIT VULNERABILITY REPORT
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div className="flex flex-col gap-6">
             <div>
-              <label style={{ fontSize: 10, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.15em', display: 'block', marginBottom: 6 }}>
+              <label className="block text-white/60 text-sm tracking-widest mb-2 uppercase">
                 Vulnerability Title *
               </label>
               <input
-                className="terminal-input"
+                className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-white text-lg focus:outline-none focus:border-blue-500 focus:bg-white/10 transition-colors"
                 value={form.title}
                 onChange={set('title')}
                 placeholder="e.g. Critical RCE in payment service"
@@ -83,52 +79,54 @@ export function Landing() {
             </div>
 
             <div>
-              <label style={{ fontSize: 10, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.15em', display: 'block', marginBottom: 6 }}>
+              <label className="block text-white/60 text-sm tracking-widest mb-2 uppercase">
                 Severity *
               </label>
-              <select className="terminal-input" value={form.severity} onChange={set('severity')} required>
-                <option value="low">LOW</option>
-                <option value="medium">MEDIUM</option>
-                <option value="high">HIGH</option>
-                <option value="critical">CRITICAL</option>
+              <select 
+                className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-white text-lg focus:outline-none focus:border-blue-500 focus:bg-white/10 transition-colors appearance-none"
+                value={form.severity} 
+                onChange={set('severity')} 
+                required
+              >
+                <option value="low" className="bg-slate-900">LOW</option>
+                <option value="medium" className="bg-slate-900">MEDIUM</option>
+                <option value="high" className="bg-slate-900">HIGH</option>
+                <option value="critical" className="bg-slate-900">CRITICAL</option>
               </select>
-              <div style={{ marginTop: 6, height: 4, background: SEVERITY_COLORS[form.severity], opacity: 0.7 }} />
             </div>
 
             <div>
-              <label style={{ fontSize: 10, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.15em', display: 'block', marginBottom: 6 }}>
+              <label className="block text-white/60 text-sm tracking-widest mb-2 uppercase">
                 Description *
               </label>
               <textarea
-                className="terminal-input"
+                className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-white text-lg focus:outline-none focus:border-blue-500 focus:bg-white/10 transition-colors min-h-[120px]"
                 value={form.description}
                 onChange={set('description')}
                 placeholder="Detailed description of the vulnerability and how it can be exploited..."
-                rows={4}
                 required
-                style={{ resize: 'vertical' }}
               />
             </div>
 
             <div>
-              <label style={{ fontSize: 10, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.15em', display: 'block', marginBottom: 6 }}>
-                Affected Systems (comma-separated)
+              <label className="block text-white/60 text-sm tracking-widest mb-2 uppercase">
+                Affected Systems
               </label>
               <input
-                className="terminal-input"
+                className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-white text-lg focus:outline-none focus:border-blue-500 focus:bg-white/10 transition-colors"
                 value={form.affected_systems}
                 onChange={set('affected_systems')}
-                placeholder="api-gateway v2.1, payment-service v1.4"
+                placeholder="e.g. api-gateway v2.1 (comma-separated)"
               />
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                <label style={{ fontSize: 10, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.15em', display: 'block', marginBottom: 6 }}>
+                <label className="block text-white/60 text-sm tracking-widest mb-2 uppercase">
                   Your Email *
                 </label>
                 <input
-                  className="terminal-input"
+                  className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-white text-lg focus:outline-none focus:border-blue-500 focus:bg-white/10 transition-colors"
                   type="email"
                   value={form.researcher_email}
                   onChange={set('researcher_email')}
@@ -137,11 +135,11 @@ export function Landing() {
                 />
               </div>
               <div>
-                <label style={{ fontSize: 10, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.15em', display: 'block', marginBottom: 6 }}>
+                <label className="block text-white/60 text-sm tracking-widest mb-2 uppercase">
                   Your Name
                 </label>
                 <input
-                  className="terminal-input"
+                  className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-white text-lg focus:outline-none focus:border-blue-500 focus:bg-white/10 transition-colors"
                   value={form.researcher_name}
                   onChange={set('researcher_name')}
                   placeholder="Optional"
@@ -150,26 +148,32 @@ export function Landing() {
             </div>
 
             {error && (
-              <div style={{ background: 'rgba(255,51,51,0.1)', border: '1px solid var(--red)', padding: '10px 14px', fontSize: 12, color: 'var(--red)' }}>
+              <div className="bg-red-500/10 border border-red-500/50 rounded-lg p-4 text-red-400 text-sm tracking-wide">
                 ✕ {error}
               </div>
             )}
 
-            <button
-              type="submit"
-              className="btn btn-green"
-              disabled={loading}
-              style={{ fontSize: 13, padding: '12px 24px', marginTop: 8 }}
-            >
-              {loading ? 'CREATING CASE IN VULNBRIDGE...' : 'SUBMIT VULNERABILITY'}
-            </button>
+            <div className="mt-4 flex justify-center">
+              {loading ? (
+                <div className="w-full">
+                  <ProgressiveFluxLoader loop={true} duration={4} />
+                </div>
+              ) : (
+                <button
+                  type="submit"
+                  className="w-full bg-blue-600 hover:bg-blue-500 text-white py-4 rounded-lg text-xl tracking-widest transition-all hover:shadow-[0_0_20px_rgba(37,99,235,0.4)]"
+                >
+                  SUBMIT VULNERABILITY
+                </button>
+              )}
+            </div>
           </div>
-        </div>
-      </form>
+        </form>
 
-      {/* Footer */}
-      <div style={{ marginTop: 32, fontSize: 10, color: 'var(--text-dim)', textAlign: 'center', letterSpacing: '0.1em' }}>
-        VULNBRIDGE AGENT · TERMINAL 3 INTEGRATION · IMMUTABLE AUDIT TRAIL
+        {/* Footer */}
+        <div className="mt-8 text-center text-white/40 text-sm tracking-[0.2em] uppercase">
+          Powered by Terminal 3 TEE · Immutable Audit Trail
+        </div>
       </div>
     </div>
   );

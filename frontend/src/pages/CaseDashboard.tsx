@@ -13,10 +13,10 @@ import { AuditLog } from '../components/AuditLog';
 import { RevocationBanner } from '../components/RevocationBanner';
 
 function severityColor(score: number): string {
-  if (score >= 9) return '#ff0000';
-  if (score >= 7) return '#ff6600';
-  if (score >= 5) return '#ffaa00';
-  return '#44ff44';
+  if (score >= 9) return '#ef4444'; // red-500
+  if (score >= 7) return '#f97316'; // orange-500
+  if (score >= 5) return '#eab308'; // yellow-500
+  return '#3b82f6'; // blue-500 (fits the cosmic theme better for low severity)
 }
 
 function severityLabel(score: number): string {
@@ -52,7 +52,7 @@ export function CaseDashboard() {
     try {
       const [caseResp, authResp] = await Promise.all([
         vulnbridgeApi.getCase(caseId),
-        vulnbridgeApi.getAllAuthorityStatus(),
+        vulnbridgeApi.getAllAuthorityStatus(caseId),
       ]);
       setCurrentCase(caseResp.data);
       setAuthorityStatus(authResp.data);
@@ -91,9 +91,9 @@ export function CaseDashboard() {
 
   if (!currentCase || !authorityStatus) {
     return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ fontFamily: 'var(--font-vt)', fontSize: 24, color: 'var(--green)' }}>
-          LOADING CASE DATA<span className="cursor" />
+      <div className="min-h-screen flex items-center justify-center bg-black">
+        <div className="font-vt text-2xl text-blue-400 tracking-widest uppercase animate-pulse">
+          LOADING CASE DATA
         </div>
       </div>
     );
@@ -102,7 +102,7 @@ export function CaseDashboard() {
   const stage = currentCase.current_workflow_stage;
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+    <div className="flex flex-col h-screen overflow-hidden bg-black text-white" style={{ fontFamily: 'var(--font-vt)' }}>
 
       {/* Revocation overlay — THE MONEY MOMENT */}
       {revocationEvent && (
@@ -130,99 +130,75 @@ export function CaseDashboard() {
       )}
 
       {/* Top bar */}
-      <div style={{
-        borderBottom: '1px solid var(--border)',
-        padding: '12px 24px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        background: 'rgba(0,255,65,0.03)',
-      }}>
-        <div>
-          <span style={{ fontFamily: 'var(--font-vt)', fontSize: 22, color: 'var(--green)', letterSpacing: '0.2em' }}>
+      <div className="flex items-center justify-between border-b border-white/10 bg-white/5 px-6 py-4 backdrop-blur-md">
+        <div className="flex items-baseline gap-4">
+          <span className="text-2xl text-blue-400 tracking-widest uppercase">
             VULNBRIDGE
           </span>
-          <span style={{ color: 'var(--text-dim)', marginLeft: 16, fontSize: 11 }}>
+          <span className="text-white/40 text-sm tracking-widest uppercase">
             AGENT CONSOLE
           </span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16, fontSize: 11 }}>
-          <span style={{ color: wsConnected ? 'var(--green)' : 'var(--red)' }}>
+        <div className="flex items-center gap-6 text-sm tracking-widest">
+          <span className={wsConnected ? 'text-green-400' : 'text-red-400'}>
             {wsConnected ? '● LIVE' : '○ DISCONNECTED'}
           </span>
-          <span style={{ color: 'var(--text-dim)' }}>
-            CASE: <span style={{ color: 'var(--green)' }}>{caseId}</span>
+          <span className="text-white/60">
+            CASE: <span className="text-blue-400">{caseId}</span>
           </span>
         </div>
       </div>
 
       {/* Main layout */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: '280px 1fr 340px',
-        gap: 1,
-        flex: 1,
-        background: 'var(--border)',
-      }}>
+      <div className="grid grid-cols-[380px_1fr] gap-[1px] flex-1 min-h-0 min-w-0 bg-white/10">
 
         {/* LEFT: Case info + workflow */}
-        <div style={{ background: 'var(--bg)', padding: 20, overflowY: 'auto' }}>
+        <div className="bg-[#0a0a0a] p-6 overflow-y-auto">
           {/* Case info */}
-          <div style={{ marginBottom: 24 }}>
-            <div style={{
-              fontFamily: 'var(--font-vt)',
-              fontSize: 11,
-              color: 'var(--text-dim)',
-              textTransform: 'uppercase',
-              letterSpacing: '0.15em',
-              marginBottom: 8,
-            }}>
+          <div className="mb-8">
+            <div className="text-white/40 text-sm tracking-widest uppercase mb-2">
               Case Report
             </div>
-            <div style={{ fontFamily: 'var(--font-vt)', fontSize: 16, color: 'var(--text)', marginBottom: 8 }}>
+            <div className="text-2xl text-white mb-4 tracking-wider">
               {currentCase.title}
             </div>
 
             {/* Severity */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-              <span style={{
-                fontSize: 11,
-                padding: '2px 10px',
-                border: `1px solid ${severityColor(currentCase.severity_score)}`,
-                color: severityColor(currentCase.severity_score),
-                background: `${severityColor(currentCase.severity_score)}18`,
-                textTransform: 'uppercase',
-                letterSpacing: '0.1em',
-                fontFamily: 'var(--font-mono)',
-              }}>
+            <div className="flex items-center gap-2 mb-4">
+              <span className="text-sm px-3 py-1 border rounded bg-opacity-10 tracking-widest"
+                style={{ 
+                  color: severityColor(currentCase.severity_score), 
+                  borderColor: severityColor(currentCase.severity_score),
+                  backgroundColor: `${severityColor(currentCase.severity_score)}20`
+                }}>
                 {severityLabel(currentCase.severity_score)} · {currentCase.severity_score.toFixed(1)}
               </span>
             </div>
 
-            <div style={{ fontSize: 11, color: 'var(--text-dim)', lineHeight: 1.7, marginBottom: 12 }}>
+            <div className="text-base text-white/70 leading-relaxed mb-6">
               {currentCase.description}
             </div>
 
             {currentCase.affected_systems?.length > 0 && (
-              <div style={{ marginBottom: 12 }}>
-                <div style={{ fontSize: 10, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 4 }}>
+              <div className="mb-6">
+                <div className="text-white/40 text-xs tracking-widest uppercase mb-2">
                   Affected Systems
                 </div>
                 {currentCase.affected_systems.map((s, i) => (
-                  <div key={i} style={{ fontSize: 11, color: 'var(--amber)', marginBottom: 2 }}>▸ {s}</div>
+                  <div key={i} className="text-sm text-blue-300 mb-1">▸ {s}</div>
                 ))}
               </div>
             )}
 
-            <div style={{ fontSize: 10, color: 'var(--text-dim)' }}>
+            <div className="text-sm text-white/40">
               Reported by {currentCase.researcher_name || currentCase.researcher_email}
               <br />
               {new Date(currentCase.created_at).toLocaleString()}
             </div>
           </div>
 
-          <div style={{ borderTop: '1px solid var(--border)', paddingTop: 20 }}>
-            <div style={{ fontSize: 10, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.15em', marginBottom: 16 }}>
+          <div className="border-t border-white/10 pt-6">
+            <div className="text-white/40 text-sm tracking-widest uppercase mb-6">
               Workflow
             </div>
             <WorkflowTimeline
@@ -233,118 +209,45 @@ export function CaseDashboard() {
 
           {/* Back link */}
           <button
-            className="btn"
             onClick={() => navigate('/')}
-            style={{ marginTop: 24, fontSize: 10, width: '100%' }}
+            className="w-full mt-8 py-3 px-4 border border-white/20 text-white/60 hover:text-white hover:bg-white/5 rounded-lg tracking-widest transition-colors uppercase text-sm"
           >
             NEW SUBMISSION
           </button>
         </div>
 
-        {/* CENTER: Contract execution */}
-        <div style={{ background: 'var(--bg)', padding: 20, overflowY: 'auto' }}>
-          <div style={{ fontFamily: 'var(--font-vt)', fontSize: 16, color: 'var(--green)', marginBottom: 4, letterSpacing: '0.1em' }}>
-            AGENT EXECUTION CONSOLE
-          </div>
-          <div style={{ fontSize: 11, color: 'var(--text-dim)', marginBottom: 24 }}>
-            Agent DID: <span style={{ color: 'var(--amber)' }}>did:t3n:091e8b21...c597</span>
-            &nbsp;·&nbsp; Each action requires T3N authority verification before execution.
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {/* Each contract */}
-            {(['validate', 'remediate', 'disclose', 'publish'] as const).map((action) => {
-              const authState = authorityStatus[action];
-              const isLoading = activeContractLoading === action;
-              const actionLabels = {
-                validate: { label: '1. Validate Vulnerability', desc: 'Security: Confirm severity, scope, and technical impact' },
-                remediate: { label: '2. Coordinate Remediation', desc: 'Engineering: Track patch development and deployment' },
-                disclose: { label: '3. Prepare Disclosure', desc: 'Legal: Review CVE draft, liability, coordinated timeline' },
-                publish: { label: '4. Publish Advisory', desc: 'Comms: Release public advisory and notify vendors' },
-              };
-
-              return (
-                <div
-                  key={action}
-                  className="terminal-card"
-                  style={{
-                    padding: 16,
-                    borderColor: authState.authorized ? 'rgba(0,255,65,0.4)' : 'rgba(0,255,65,0.12)',
-                    opacity: authState.authorized ? 1 : 0.6,
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
-                    <div>
-                      <div style={{ fontSize: 13, color: authState.authorized ? 'var(--text)' : 'var(--text-dim)', marginBottom: 4 }}>
-                        {actionLabels[action].label}
-                      </div>
-                      <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>
-                        {actionLabels[action].desc}
-                      </div>
-                      {!authState.authorized && (
-                        <div style={{ fontSize: 10, color: 'var(--red)', marginTop: 6 }}>
-                          ⚠ Requires T3N authority — grant in the authority panel →
-                        </div>
-                      )}
-                    </div>
-                    <button
-                      className={`btn ${authState.authorized ? 'btn-green' : ''}`}
-                      disabled={!authState.authorized || isLoading}
-                      onClick={() => executeContract(action)}
-                      style={{ flexShrink: 0, fontSize: 11, whiteSpace: 'nowrap' }}
-                    >
-                      {isLoading ? 'EXECUTING IN TEE...' : 'EXECUTE'}
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* T3N Agent info box */}
-          <div style={{
-            marginTop: 24,
-            background: 'rgba(0,255,65,0.03)',
-            border: '1px solid rgba(0,255,65,0.1)',
-            padding: '14px 16px',
-            fontSize: 11,
-            color: 'var(--text-dim)',
-            lineHeight: 1.8,
-          }}>
-            <div style={{ color: 'var(--amber)', marginBottom: 6, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-              ⚡ How Terminal 3 works here
-            </div>
-            Each EXECUTE button calls the T3N TEE, which reads authority from hardware storage
-            ({`z:vulnbridge:authority:{action}`}) before running the contract.
-            If authority was revoked — even 1 second ago — the TEE returns AUTHORITY_REVOKED
-            with a cryptographic proof. There is no way to bypass this in software.
-          </div>
-        </div>
-
-        {/* RIGHT: Authority panel + audit log */}
-        <div style={{ background: 'var(--bg)', padding: 20, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {/* RIGHT: Unified Agent Console & Authority */}
+        <div className="bg-[#050505] p-8 overflow-y-auto flex flex-col gap-6">
           <div>
-            <div style={{ fontFamily: 'var(--font-vt)', fontSize: 16, color: 'var(--green)', marginBottom: 4, letterSpacing: '0.1em' }}>
-              T3N AUTHORITY PANEL
+            <div className="text-2xl text-blue-400 mb-2 tracking-widest uppercase">
+              AGENT AUTHORITY & EXECUTION CONSOLE
             </div>
-            <div style={{ fontSize: 10, color: 'var(--text-dim)', marginBottom: 16 }}>
-              Authority stored in Terminal 3 hardware. Grant/revoke takes effect immediately.
+            <div className="text-sm text-white/40 mb-1 tracking-wider">
+              Agent DID: <span className="text-blue-300">did:t3n:091e8b21...c597</span>
+            </div>
+            <div className="text-sm text-white/40 mb-6">
+              Authority is stored in Terminal 3 hardware. Grant/revoke takes effect immediately.
+              Execution is cryptographically blocked without active authority.
             </div>
           </div>
 
-          {(['validate', 'remediate', 'disclose', 'publish'] as const).map((action) => (
-            <AuthorityCard
-              key={action}
-              action={action}
-              status={authorityStatus[action]}
-              caseId={caseId!}
-              onUpdate={loadData}
-            />
-          ))}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {(['validate', 'remediate', 'disclose', 'publish'] as const).map((action) => (
+              <AuthorityCard
+                key={action}
+                action={action}
+                status={authorityStatus[action]}
+                caseId={caseId!}
+                onUpdate={loadData}
+                onExecute={() => executeContract(action)}
+                isExecuting={activeContractLoading === action}
+              />
+            ))}
+          </div>
 
           {/* Audit log */}
-          <div style={{ marginTop: 8 }}>
-            <div style={{ fontFamily: 'var(--font-vt)', fontSize: 14, color: 'var(--green)', marginBottom: 8, letterSpacing: '0.1em' }}>
+          <div className="mt-4">
+            <div className="text-lg text-blue-400 mb-4 tracking-widest uppercase">
               T3N AUDIT LOG
             </div>
             <AuditLog entries={auditLog} />

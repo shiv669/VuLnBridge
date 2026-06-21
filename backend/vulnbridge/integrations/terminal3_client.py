@@ -366,6 +366,7 @@ class Terminal3Client:
             payload_dict["contract_version"] = self.contract_version
         
         payload = json.dumps(payload_dict)
+        stdout = ""
         try:
             result = subprocess.run(
                 ['node', str(_NODE_HELPER), payload],
@@ -396,32 +397,36 @@ class Terminal3Client:
         except subprocess.TimeoutExpired:
             raise RuntimeError("T3N operation timed out after 60 seconds")
         except json.JSONDecodeError:
-            raise RuntimeError(f"T3N SDK returned non-JSON: {result.stdout[:300]}")
+            raise RuntimeError(f"T3N SDK returned non-JSON: {stdout[:300]}")
 
     # ── Public API ─────────────────────────────────────────────────────────────
 
-    def grant_authority(self, action: str, granted_by: str) -> Dict:
+    def grant_authority(self, action: str, granted_by: str, case_id: Optional[str] = None) -> Dict:
         """Store authority=true in T3N TEE KV for action."""
-        if hasattr(self, '_auth_cache'): self._auth_cache.pop(action, None)
-        return self._call('grant', action=action, granted_by=granted_by)
+        cache_key = f"{case_id}:{action}" if case_id else action
+        if hasattr(self, '_auth_cache'): self._auth_cache.pop(cache_key, None)
+        return self._call('grant', action=action, granted_by=granted_by, case_id=case_id)
 
-    def revoke_authority(self, action: str) -> Dict:
+    def revoke_authority(self, action: str, case_id: Optional[str] = None) -> Dict:
         """Store authority=false in T3N TEE KV — immediate effect."""
-        if hasattr(self, '_auth_cache'): self._auth_cache.pop(action, None)
-        return self._call('revoke', action=action)
+        cache_key = f"{case_id}:{action}" if case_id else action
+        if hasattr(self, '_auth_cache'): self._auth_cache.pop(cache_key, None)
+        return self._call('revoke', action=action, case_id=case_id)
 
-    def get_authority(self, action: str) -> Dict:
+    def get_authority(self, action: str, case_id: Optional[str] = None) -> Dict:
         """Read current authority from T3N TEE KV. Hardware-verified."""
         if not hasattr(self, '_auth_cache'):
             self._auth_cache = {}
         
+        cache_key = f"{case_id}:{action}" if case_id else action
+        
         # Indefinite cache to prevent rate limit exhaustion.
         # Cache is explicitly cleared when grant_authority or revoke_authority are called.
-        if action in self._auth_cache:
-            return self._auth_cache[action]
+        if cache_key in self._auth_cache:
+            return self._auth_cache[cache_key]
             
-        result = self._call('check', action=action)
-        self._auth_cache[action] = result
+        result = self._call('check', action=action, case_id=case_id)
+        self._auth_cache[cache_key] = result
         return result
 
     def execute_contract(self, contract_name: str, input_data: Dict) -> Dict:

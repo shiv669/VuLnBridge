@@ -3,6 +3,10 @@ import ReactDOM from 'react-dom/client';
 // import './index.css'; // Temporarily disabled to bypass Tailwind build issue
 import App from './App';
 import reportWebVitals from './reportWebVitals';
+import axios from 'axios';
+
+// Routes API calls to production backend if defined, otherwise falls back to local proxy in dev
+axios.defaults.baseURL = process.env.REACT_APP_API_URL || '';
 
 const root = ReactDOM.createRoot(
   document.getElementById('root') as HTMLElement

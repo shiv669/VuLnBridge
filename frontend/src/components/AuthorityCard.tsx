@@ -15,9 +15,11 @@ interface Props {
   status: AuthorityStatus;
   caseId: string;
   onUpdate: () => void;
+  onExecute?: () => void;
+  isExecuting?: boolean;
 }
 
-export function AuthorityCard({ action, status, caseId, onUpdate }: Props) {
+export function AuthorityCard({ action, status, caseId, onUpdate, onExecute, isExecuting }: Props) {
   const [loading, setLoading] = useState<'grant' | 'revoke' | null>(null);
   const [granterEmail, setGranterEmail] = useState('');
   const [showInput, setShowInput] = useState(false);
@@ -58,33 +60,33 @@ export function AuthorityCard({ action, status, caseId, onUpdate }: Props) {
 
   return (
     <div
-      className="terminal-card p-4 flex flex-col gap-3"
+      className="bg-white/5 backdrop-blur-md border border-white/10 p-5 flex flex-col gap-4 rounded-xl shadow-lg transition-all"
       style={{
         borderColor: authorized
-          ? 'rgba(0,255,65,0.6)'
+          ? 'rgba(59,130,246,0.6)' // blue-500
           : revoked_at
-          ? 'rgba(255,51,51,0.6)'
-          : 'rgba(0,255,65,0.2)',
-        boxShadow: authorized ? '0 0 12px rgba(0,255,65,0.15)' : undefined,
+          ? 'rgba(239,68,68,0.6)' // red-500
+          : 'rgba(255,255,255,0.1)',
+        boxShadow: authorized ? '0 0 20px rgba(59,130,246,0.15)' : undefined,
       }}
     >
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <span style={{ fontSize: 20 }}>{meta.icon}</span>{' '}
-          <span className="font-vt text-green-400 uppercase tracking-widest" style={{ fontFamily: 'var(--font-vt)', fontSize: 18, color: 'var(--green)' }}>
+          <span className="text-2xl mr-2">{meta.icon}</span>
+          <span className="text-xl tracking-widest text-blue-400 uppercase">
             {meta.label}
           </span>
         </div>
         <span
-          className="badge"
+          className="text-xs px-2 py-1 rounded tracking-widest uppercase border"
           style={{
-            color: authorized ? 'var(--green)' : revoked_at ? 'var(--red)' : 'var(--text-dim)',
-            borderColor: authorized ? 'var(--green)' : revoked_at ? 'var(--red)' : 'var(--border)',
+            color: authorized ? '#60a5fa' : revoked_at ? '#f87171' : 'rgba(255,255,255,0.5)',
+            borderColor: authorized ? 'rgba(59,130,246,0.5)' : revoked_at ? 'rgba(239,68,68,0.5)' : 'rgba(255,255,255,0.2)',
             background: authorized
-              ? 'rgba(0,255,65,0.1)'
+              ? 'rgba(59,130,246,0.1)'
               : revoked_at
-              ? 'rgba(255,51,51,0.1)'
+              ? 'rgba(239,68,68,0.1)'
               : 'transparent',
           }}
         >
@@ -93,16 +95,16 @@ export function AuthorityCard({ action, status, caseId, onUpdate }: Props) {
       </div>
 
       {/* Team */}
-      <div style={{ color: 'var(--text-dim)', fontSize: 11 }}>
+      <div className="text-white/50 text-xs tracking-widest uppercase">
         {meta.team}
       </div>
 
       {/* T3N verification badge */}
       {t3n_verified && (
-        <div style={{ fontSize: 10, color: 'var(--amber)' }}>
+        <div className="text-[10px] text-yellow-500 tracking-widest">
           ⚡ T3N VERIFIED
           {t3n_proof && (
-            <span style={{ color: 'var(--text-dim)', marginLeft: 6 }}>
+            <span className="text-white/40 ml-2 tracking-normal">
               {t3n_proof.slice(0, 16)}…
             </span>
           )}
@@ -111,27 +113,26 @@ export function AuthorityCard({ action, status, caseId, onUpdate }: Props) {
 
       {/* Grant info */}
       {granted_by && authorized && (
-        <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>
-          Granted by <span style={{ color: 'var(--text)' }}>{granted_by}</span>
+        <div className="text-xs text-white/50 tracking-wider">
+          Granted by <span className="text-white/90">{granted_by}</span>
           {granted_at && (
             <span> · {new Date(granted_at).toLocaleTimeString()}</span>
           )}
         </div>
       )}
       {revoked_at && !authorized && (
-        <div style={{ fontSize: 11, color: 'var(--red)' }}>
+        <div className="text-xs text-red-400 tracking-wider">
           Revoked {new Date(revoked_at).toLocaleTimeString()}
         </div>
       )}
 
       {/* Controls */}
-      <div className="flex flex-col gap-2 mt-1">
+      <div className="flex flex-col gap-3 mt-2">
         {!authorized ? (
           <>
             {showInput && (
               <input
-                className="terminal-input"
-                style={{ fontSize: 11, padding: '4px 8px' }}
+                className="w-full bg-black/40 border border-white/10 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 transition-colors"
                 placeholder={`${meta.team} email...`}
                 value={granterEmail}
                 onChange={(e) => setGranterEmail(e.target.value)}
@@ -139,23 +140,32 @@ export function AuthorityCard({ action, status, caseId, onUpdate }: Props) {
               />
             )}
             <button
-              className="btn btn-green"
+              className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white py-2 rounded text-xs tracking-widest uppercase transition-colors"
               onClick={showInput ? handleGrant : () => setShowInput(true)}
               disabled={loading === 'grant'}
-              style={{ fontSize: 11 }}
             >
               {loading === 'grant' ? 'WRITING TO T3N...' : showInput ? 'CONFIRM GRANT' : 'GRANT AUTHORITY'}
             </button>
           </>
         ) : (
-          <button
-            className="btn btn-red"
-            onClick={handleRevoke}
-            disabled={loading === 'revoke'}
-            style={{ fontSize: 11 }}
-          >
-            {loading === 'revoke' ? 'REVOKING IN T3N...' : 'REVOKE AUTHORITY'}
-          </button>
+          <div className="flex gap-3">
+            <button
+              className="flex-1 bg-red-900/50 hover:bg-red-900 border border-red-500/50 disabled:opacity-50 text-red-300 py-2 rounded text-xs tracking-widest uppercase transition-colors"
+              onClick={handleRevoke}
+              disabled={loading === 'revoke'}
+            >
+              {loading === 'revoke' ? 'REVOKING...' : 'REVOKE'}
+            </button>
+            {onExecute && (
+              <button
+                className="flex-[2] bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white py-2 rounded text-xs tracking-widest uppercase transition-colors"
+                onClick={onExecute}
+                disabled={isExecuting}
+              >
+                {isExecuting ? 'EXECUTING IN TEE...' : '▶ EXECUTE CONTRACT'}
+              </button>
+            )}
+          </div>
         )}
       </div>
     </div>
