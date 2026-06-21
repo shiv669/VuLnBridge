@@ -92,13 +92,18 @@ async function ensureMapExists(tenantClient, mapName, contractId) {
     await tenantClient.maps.create({
       tail: mapName,
       visibility: 'private',
-      writers: { only: contractId ? [parseInt(contractId)] : [] },
-      readers: { only: contractId ? [parseInt(contractId)] : [] },
+      writers: { 
+        tenant_can_write: true,
+        only: contractId ? [parseInt(contractId)] : [] 
+      },
+      readers: { 
+        tenant_can_read: true,
+        only: contractId ? [parseInt(contractId)] : [] 
+      },
     });
   } catch (e) {
-    // Ignore "already exists" — map is already created
     if (!e.message.includes('already exists') && !e.message.includes('MapAlreadyExists')) {
-      // Silently ignore other errors too — map creation is best-effort
+      console.error(`[T3N Warning] Map creation for ${mapName} failed:`, e.message);
     }
   }
 }
